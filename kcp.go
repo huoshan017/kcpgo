@@ -1,6 +1,7 @@
 package kcp
 
 import (
+	"fmt"
 	"sync"
 
 	"github.com/huoshan017/ponu/list"
@@ -74,11 +75,13 @@ func (s *segment) clear() {
 	s.fastack = 0
 	s.xmit = 0
 	putBuffer(s.data)
+	s.data = nil
 	s.dlen = 0
 }
 
 type KcpCB struct {
-	conv, mtu, mss, state                  uint32
+	conv                                   uint32
+	mtu, mss, state                        int32
 	snd_una, snd_nxt, rcv_nxt              int32
 	ts_recent, ts_lastack, ssthresh        int32
 	rx_rttval, rx_srtt, rx_rto, rx_minrto  int32
@@ -100,7 +103,7 @@ type KcpCB struct {
 	fastlimit                              int32
 	nocwnd, stream                         int32
 	logmask                                int32
-	output                                 func(buf []byte, len int32, user any) int32
+	output_func                            func(buf []byte, len int32, user any) int32
 	updated                                bool
 	writelog                               func(log string, kcp *KcpCB, user any)
 }
@@ -151,7 +154,7 @@ func NewKcp(conv uint32, user any) *KcpCB {
 	kcp.fastlimit = KCP_FASTACK_LIMIT
 	kcp.nocwnd = 0
 	kcp.dead_link = KCP_DEADLINK
-	kcp.output = nil
+	kcp.output_func = nil
 	kcp.writelog = nil
 	return kcp
 }
@@ -166,6 +169,7 @@ func (k *KcpCB) Release() {
 		for iter != k.snd_buf.End() {
 			seg = iter.Value().(*segment)
 			putSeg(seg)
+			iter = iter.Next()
 		}
 		k.snd_buf.Clear()
 	}
@@ -174,6 +178,7 @@ func (k *KcpCB) Release() {
 		for iter != k.rcv_buf.End() {
 			seg = iter.Value().(*segment)
 			putSeg(seg)
+			iter = iter.Next()
 		}
 		k.rcv_buf.Clear()
 	}
@@ -182,6 +187,7 @@ func (k *KcpCB) Release() {
 		for iter != k.snd_queue.End() {
 			seg = iter.Value().(*segment)
 			putSeg(seg)
+			iter = iter.Next()
 		}
 		k.snd_queue.Clear()
 	}
@@ -190,13 +196,14 @@ func (k *KcpCB) Release() {
 		for iter != k.rcv_queue.End() {
 			seg = iter.Value().(*segment)
 			putSeg(seg)
+			iter = iter.Next()
 		}
 		k.rcv_queue.Clear()
 	}
 }
 
 func (k *KcpCB) SetOutput(output func(buf []byte, len int32, user any) int32) {
-	k.output = output
+	k.output_func = output
 }
 
 func (k *KcpCB) Recv(buf []byte) int32 {
@@ -256,7 +263,7 @@ func (k *KcpCB) recv(buf []byte, isPeek bool) int32 {
 	}
 
 	if length != peekSize {
-		panic("kcp: peek size must equal to length with merge fragment")
+		panic(fmt.Sprintf("kcp: peek size %v must equal to length %v with merge fragment", peekSize, length))
 	}
 
 	// move available data from rcv_buf -> rcv_queue
@@ -289,7 +296,7 @@ func (k *KcpCB) peekSize() int32 {
 	iter := k.rcv_queue.Begin()
 	seg := iter.Value().(*segment)
 	if seg.frg == 0 {
-		return int32(len(seg.data))
+		return seg.dlen
 	}
 
 	if k.rcv_queue.GetLength() < int32(seg.frg)+1 {
@@ -299,7 +306,7 @@ func (k *KcpCB) peekSize() int32 {
 	var length int32
 	for iter != k.rcv_queue.End() {
 		seg = iter.Value().(*segment)
-		length += int32(len(seg.data))
+		length += seg.dlen
 		if seg.frg == 0 {
 			break
 		}
@@ -380,7 +387,7 @@ func (k *KcpCB) updateAck(rtt int32) {
 			k.rx_srtt = 1
 		}
 	}
-	rto = k.rx_srtt + max(int32(k.interval), 4*k.rx_rttval)
+	rto = k.rx_srtt + max(k.interval, 4*k.rx_rttval)
 	k.rx_rto = bound(k.rx_minrto, rto, KCP_RTO_MAX)
 }
 
@@ -433,38 +440,39 @@ func (k *KcpCB) parseUna(una int32) {
 }
 
 func (k *KcpCB) parseFastAck(sn, ts int32) {
-	if timeDiff(sn, int32(k.snd_una)) < 0 || timeDiff(sn, int32(k.snd_nxt)) >= 0 {
+	if timeDiff(sn, k.snd_una) < 0 || timeDiff(sn, k.snd_nxt) >= 0 {
 		return
 	}
 	var iter = k.snd_buf.Begin()
 	for iter != k.snd_buf.End() {
 		var seg = iter.Value().(*segment)
-		if timeDiff(sn, int32(seg.sn)) < 0 {
+		if timeDiff(sn, seg.sn) < 0 {
 			break
 		}
-		if sn != int32(seg.sn) {
+		if sn != seg.sn {
 			if !KCP_FASTACK_CONSERVE {
 				seg.fastack += 1
 			} else {
-				if timeDiff(ts, int32(seg.ts)) >= 0 {
+				if timeDiff(ts, seg.ts) >= 0 {
 					seg.fastack += 1
 				}
 			}
 		}
+		iter = iter.Next()
 	}
 }
 
 func (k *KcpCB) ackPush(sn, ts int32) {
-	var newSize = int32(k.ackcount) + 1
-	if newSize > int32(k.ackblock) {
+	var newSize = k.ackcount + 1
+	if newSize > k.ackblock {
 		var newBlock int32
 		for newBlock = 8; newBlock < newSize; newBlock <<= 1 {
 		}
 		var ackList = make([]int32, newBlock*2)
 		if k.acklist != nil {
-			for i := int32(0); i < int32(k.ackcount); i++ {
-				ackList[i*2+0] = int32(k.acklist[i*2+0])
-				ackList[i*2+1] = int32(k.acklist[i*2+1])
+			for i := int32(0); i < k.ackcount; i++ {
+				ackList[i*2+0] = k.acklist[i*2+0]
+				ackList[i*2+1] = k.acklist[i*2+1]
 			}
 		}
 		k.acklist = ackList
@@ -511,7 +519,7 @@ func (k *KcpCB) parseData(seg *segment) {
 	// move available data from rcv_buf -> rcv_queue
 	iter = k.rcv_buf.Begin()
 	for iter != k.rcv_buf.End() {
-		var seg = iter.Value().(*segment)
+		seg = iter.Value().(*segment)
 		if seg.sn == k.rcv_nxt && k.rcv_queue.GetLength() < k.rcv_wnd {
 			var o bool
 			iter, o = k.rcv_buf.DeleteContinueNext(iter)
@@ -535,18 +543,19 @@ func (k *KcpCB) Input(data []byte) int32 {
 	var (
 		flag             bool
 		maxAck, latestTs int32
+		offset           int32
 		size             = int32(len(data))
 	)
 	for {
 		if size < KCP_OVERHEAD {
 			break
 		}
-		var conv = uint32(decode32(data))
+
+		var conv = uint32(decode32(data[offset:]))
+		offset += 4
 		if conv != k.conv {
 			return -1
 		}
-
-		var offset int32 = 4
 		var cmd = int32(data[offset])
 		offset += 1
 		var frg = int32(data[offset])
@@ -559,11 +568,12 @@ func (k *KcpCB) Input(data []byte) int32 {
 		offset += 4
 		var una = decode32(data[offset:])
 		offset += 4
-		var len = decode32(data[offset:])
+		var dlen = decode32(data[offset:])
+		offset += 4
 
 		size -= KCP_OVERHEAD
 
-		if size < len || len < 0 {
+		if size < dlen || dlen < 0 {
 			return -2
 		}
 
@@ -611,9 +621,8 @@ func (k *KcpCB) Input(data []byte) int32 {
 					seg.ts = ts
 					seg.sn = sn
 					seg.una = una
-					seg.dlen = len
-					if len > 0 {
-						seg.copyData(data[offset:], int32(k.mss))
+					if dlen > 0 {
+						seg.copyData(data[offset:offset+dlen], int32(k.mss))
 					}
 					k.parseData(seg)
 				}
@@ -626,7 +635,8 @@ func (k *KcpCB) Input(data []byte) int32 {
 			return -3
 		}
 
-		offset += len
+		offset += dlen
+		size -= dlen
 	}
 
 	if flag {
@@ -635,7 +645,7 @@ func (k *KcpCB) Input(data []byte) int32 {
 
 	if timeDiff(k.snd_una, prevUna) > 0 {
 		if k.cwnd < k.rmt_wnd {
-			var mss int32 = int32(k.mss)
+			var mss int32 = k.mss
 			if k.cwnd < k.ssthresh {
 				k.cwnd += 1
 				k.incr += mss
@@ -675,6 +685,7 @@ func (k *KcpCB) encodeSeg(data []byte, seg *segment) int32 {
 	encode32(data[offset:], seg.una)
 	offset += 4
 	encode32(data[offset:], seg.dlen)
+	offset += 4
 	return offset
 }
 
@@ -683,6 +694,10 @@ func (k *KcpCB) wndUnused() int32 {
 		return k.rcv_wnd - k.rcv_queue.GetLength()
 	}
 	return 0
+}
+
+func (k *KcpCB) output(data []byte, dlen int32) {
+	k.output_func(data, dlen, k.user)
 }
 
 func (k *KcpCB) Flush() {
@@ -706,9 +721,10 @@ func (k *KcpCB) Flush() {
 	)
 	for i := int32(0); i < count; i++ {
 		if offset+KCP_OVERHEAD > int32(k.mtu) {
-			k.output(k.buffer, offset, k.user)
+			k.output(k.buffer, offset)
 			offset = 0
 		}
+		seg.cmd = KCP_CMD_ACK
 		seg.sn, seg.ts = k.ackGet(i)
 		var d = k.encodeSeg(k.buffer[offset:], &seg)
 		offset += d
@@ -743,7 +759,7 @@ func (k *KcpCB) Flush() {
 	if k.probe&KCP_ASK_SEND > 0 {
 		seg.cmd = KCP_CMD_WASK
 		if offset+KCP_OVERHEAD > int32(k.mtu) {
-			k.output(k.buffer, offset, k.user)
+			k.output(k.buffer, offset)
 			offset = 0
 		}
 		var d = k.encodeSeg(k.buffer[offset:], &seg)
@@ -754,7 +770,7 @@ func (k *KcpCB) Flush() {
 	if k.probe&KCP_ASK_TELL > 0 {
 		seg.cmd = KCP_CMD_WINS
 		if offset+KCP_OVERHEAD > int32(k.mtu) {
-			k.output(k.buffer, offset, k.user)
+			k.output(k.buffer, offset)
 			offset = 0
 		}
 		var d = k.encodeSeg(k.buffer[offset:], &seg)
@@ -786,7 +802,7 @@ func (k *KcpCB) Flush() {
 		tseg.cmd = KCP_CMD_PUSH
 		tseg.wnd = seg.wnd
 		tseg.ts = k.current
-		tseg.sn = k.snd_nxt + 1
+		tseg.sn = k.snd_nxt
 		k.snd_nxt += 1
 		tseg.una = k.rcv_nxt
 		tseg.resendts = k.current
@@ -854,7 +870,7 @@ func (k *KcpCB) Flush() {
 			tseg.una = k.rcv_nxt
 			var need = KCP_OVERHEAD + tseg.dlen
 			if offset+need > int32(k.mtu) {
-				k.output(k.buffer, offset, k.user)
+				k.output(k.buffer, offset)
 				offset = 0
 			}
 			var d = k.encodeSeg(k.buffer[offset:], tseg)
@@ -866,14 +882,14 @@ func (k *KcpCB) Flush() {
 			}
 
 			if tseg.xmit >= k.dead_link {
-				k.state = 0xffffffff
+				k.state = 0x7fffffff
 			}
 		}
 	}
 
 	// flush remain segments
 	if offset > 0 {
-		k.output(k.buffer, offset, k.user)
+		k.output(k.buffer, offset)
 	}
 
 	// update ssthresh
@@ -884,7 +900,7 @@ func (k *KcpCB) Flush() {
 			k.ssthresh = KCP_THRESH_MIN
 		}
 		k.cwnd = k.ssthresh + resent
-		k.incr = k.cwnd * int32(k.mss)
+		k.incr = k.cwnd * k.mss
 	}
 
 	if lost {
@@ -896,7 +912,7 @@ func (k *KcpCB) Flush() {
 
 	if lost || k.cwnd < 1 {
 		k.cwnd = 1
-		k.incr = int32(k.mss)
+		k.incr = k.mss
 	}
 }
 
@@ -974,7 +990,7 @@ func (k *KcpCB) SetMtu(mtu int32) int32 {
 		return 0
 	}
 
-	k.mtu = uint32(mtu)
+	k.mtu = mtu
 	k.mss = k.mtu - KCP_OVERHEAD
 	k.buffer = make([]byte, (mtu+KCP_OVERHEAD)*3)
 	return 0

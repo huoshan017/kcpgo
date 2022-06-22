@@ -68,6 +68,7 @@ func (r *random) rand() int32 {
 }
 
 type latencySimulator struct {
+	t              *testing.T
 	tx             [2]int32
 	current        int32
 	lostrate       int32
@@ -78,8 +79,9 @@ type latencySimulator struct {
 	r              [2]*rand.Rand
 }
 
-func newLatencySimulator(lostrate, rttmin, rttmax, nmax int32) *latencySimulator {
+func newLatencySimulator(t *testing.T, lostrate, rttmin, rttmax, nmax int32) *latencySimulator {
 	s := &latencySimulator{}
+	s.t = t
 	s.current = currentMilli()
 	s.lostrate = lostrate / 2
 	s.rttmin = rttmin / 2
@@ -102,9 +104,12 @@ func (s *latencySimulator) clear() {
 
 func (s *latencySimulator) send(peer int32, data []byte) {
 	s.tx[peer] += 1
-	if s.rand[peer].rand() < s.lostrate {
+	var r = s.rand[peer].rand()
+	if r < s.lostrate {
+		//s.t.Logf("peer %v lost data %v, lost value %v", peer, data, r)
 		return
 	}
+	//s.t.Logf("peer %v lost value %v", peer, r)
 	if s.p[peer].GetLength() >= s.nmax {
 		return
 	}
@@ -119,6 +124,7 @@ func (s *latencySimulator) send(peer int32, data []byte) {
 }
 
 func (s *latencySimulator) recv(peer int32, data []byte) int32 {
+	peer = (peer + 1) % 2
 	if s.p[peer].GetLength() == 0 {
 		return -1
 	}
@@ -131,8 +137,8 @@ func (s *latencySimulator) recv(peer int32, data []byte) int32 {
 		return -3
 	}
 	s.p[peer].Delete(iter)
-	copy(data, packet.getData())
-	return int32(len(packet.getData()))
+	var n = copy(data, packet.getData())
+	return int32(n)
 }
 
 var (
@@ -141,12 +147,12 @@ var (
 
 func output(data []byte, dlen int32, user any) int32 {
 	var peer = user.(int32)
-	vnet.send(peer, data)
+	vnet.send(peer, data[:dlen])
 	return 0
 }
 
 func test(mode int32, t *testing.T) {
-	vnet = newLatencySimulator(10, 60, 125, 1000)
+	vnet = newLatencySimulator(t, 10, 60, 125, 1000)
 
 	var kcps = [2]*KcpCB{
 		NewKcp(0x11223344, int32(0)),
@@ -192,9 +198,11 @@ func test(mode int32, t *testing.T) {
 		// 每个20ms，kcps[0]发送数据
 		for ; current >= slap; slap += 20 {
 			encode32(buffer[:], index)
+			index += 1
 			encode32(buffer[4:], current)
-
-			kcps[0].Send(buffer[:8])
+			var data = buffer[:8]
+			kcps[0].Send(data)
+			//t.Logf("kcps[0] send %v", data)
 		}
 
 		// 处理虚拟网络: 检测是否有udp包从0->1
@@ -204,6 +212,7 @@ func test(mode int32, t *testing.T) {
 				break
 			}
 			kcps[1].Input(buffer[:d])
+			//t.Logf("kcps[1] input %v", buffer[:d])
 		}
 
 		// 处理虚拟网络: 检测是否有udp包从1->0
@@ -213,6 +222,7 @@ func test(mode int32, t *testing.T) {
 				break
 			}
 			kcps[0].Input(buffer[:d])
+			//t.Logf("kcps[0] input %v", buffer[:d])
 		}
 
 		// kcps[1]接收到任何包都返回回去
@@ -222,20 +232,23 @@ func test(mode int32, t *testing.T) {
 			if d < 0 {
 				break
 			}
+			//t.Logf("kcps[1] recv %v", buffer[:d])
 			kcps[1].Send(buffer[:d])
+			//t.Logf("kcps[1] send %v", buffer[:d])
 		}
 
 		// kcps[0]收到kcps[1]的回射数据
 		for {
 			var d = kcps[0].Recv(buffer[:])
 			if d < 0 {
+				//t.Logf("kcps[0] no recv %v", d)
 				break
 			}
 			var sn = decode32(buffer[:])
 			var ts = decode32(buffer[4:])
 			var rtt = current - ts
 			if sn != next {
-				t.Errorf("ERROR sn %v<->%v", count, next)
+				t.Errorf("ERROR sn %v  next %v  count %v", sn, next, count)
 				return
 			}
 
@@ -246,13 +259,15 @@ func test(mode int32, t *testing.T) {
 				maxrtt = rtt
 			}
 
-			t.Logf("[RECV] mode=%v sn=%v rtt=%v", mode, sn, rtt)
+			t.Logf("[RECV] mode=%v sn=%v rtt=%v, next=%v", mode, sn, rtt, next)
 		}
 
 		if next > 1000 {
 			break
 		}
 	}
+
+	vnet.clear()
 
 	var cost = currentMilli() - start
 
@@ -267,8 +282,14 @@ func test(mode int32, t *testing.T) {
 	t.Logf("avgrtt=%v maxrtt=%v tx=%v", sumrtt/count, maxrtt, vnet.tx[0])
 }
 
-func TestKCP(t *testing.T) {
+func TestDefaultKCP(t *testing.T) {
 	test(0, t)
+}
+
+func TestNormalKCP(t *testing.T) {
 	test(1, t)
+}
+
+func TestFastKCP(t *testing.T) {
 	test(2, t)
 }
