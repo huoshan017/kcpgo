@@ -89,7 +89,7 @@ func newLatencySimulator(t *testing.T, lostrate, rttmin, rttmax, nmax int32) *la
 	s.nmax = nmax
 	for i := 0; i < 2; i++ {
 		s.tx[i] = 0
-		s.r[i] = rand.New(rand.NewSource(time.Now().UnixNano()))
+		s.r[i] = rand.New(rand.NewSource(time.Now().UnixNano() + int64(i)))
 		s.rand[i] = newRandom(100, s.r[i])
 		s.p[i] = list.New()
 	}
@@ -106,7 +106,7 @@ func (s *latencySimulator) send(peer int32, data []byte) {
 	s.tx[peer] += 1
 	var r = s.rand[peer].rand()
 	if r < s.lostrate {
-		//s.t.Logf("peer %v lost data %v, lost value %v", peer, data, r)
+		s.t.Logf("peer %v lost data %v, lost value %v", peer, data, r)
 		return
 	}
 	//s.t.Logf("peer %v lost value %v", peer, r)
@@ -202,7 +202,7 @@ func test(mode int32, t *testing.T) {
 			encode32(buffer[4:], current)
 			var data = buffer[:8]
 			kcps[0].Send(data)
-			//t.Logf("kcps[0] send %v", data)
+			t.Logf("kcps[0] send %v", data)
 		}
 
 		// 处理虚拟网络: 检测是否有udp包从0->1
@@ -212,7 +212,7 @@ func test(mode int32, t *testing.T) {
 				break
 			}
 			kcps[1].Input(buffer[:d])
-			//t.Logf("kcps[1] input %v", buffer[:d])
+			t.Logf("kcps[1] input %v", buffer[:d])
 		}
 
 		// 处理虚拟网络: 检测是否有udp包从1->0
@@ -222,7 +222,7 @@ func test(mode int32, t *testing.T) {
 				break
 			}
 			kcps[0].Input(buffer[:d])
-			//t.Logf("kcps[0] input %v", buffer[:d])
+			t.Logf("kcps[0] input %v", buffer[:d])
 		}
 
 		// kcps[1]接收到任何包都返回回去
@@ -232,9 +232,9 @@ func test(mode int32, t *testing.T) {
 			if d < 0 {
 				break
 			}
-			//t.Logf("kcps[1] recv %v", buffer[:d])
+			t.Logf("kcps[1] recv %v", buffer[:d])
 			kcps[1].Send(buffer[:d])
-			//t.Logf("kcps[1] send %v", buffer[:d])
+			t.Logf("kcps[1] send %v", buffer[:d])
 		}
 
 		// kcps[0]收到kcps[1]的回射数据

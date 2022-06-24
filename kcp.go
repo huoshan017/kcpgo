@@ -83,17 +83,17 @@ type KcpCB struct {
 	conv                                   uint32
 	mtu, mss, state                        int32
 	snd_una, snd_nxt, rcv_nxt              int32
-	ts_recent, ts_lastack, ssthresh        int32
+	ssthresh                               int32
 	rx_rttval, rx_srtt, rx_rto, rx_minrto  int32
 	snd_wnd, rcv_wnd, rmt_wnd, cwnd, probe int32
 	current, interval, ts_flush            int32
 	nodelay                                int32
 	ts_probe, probe_wait                   int32
 	dead_link, incr                        int32
-	snd_queue                              *list.List
-	rcv_queue                              *list.List
-	snd_buf                                *list.List
-	rcv_buf                                *list.List
+	snd_queue                              list.List
+	rcv_queue                              list.List
+	snd_buf                                list.List
+	rcv_buf                                list.List
 	acklist                                []int32
 	ackcount                               int32
 	ackblock                               int32
@@ -116,8 +116,6 @@ func NewKcp(conv uint32, user any) *KcpCB {
 	kcp.snd_una = 0
 	kcp.snd_nxt = 0
 	kcp.rcv_nxt = 0
-	kcp.ts_recent = 0
-	kcp.ts_lastack = 0
 	kcp.ts_probe = 0
 	kcp.probe_wait = 0
 	kcp.snd_wnd = KCP_WND_SND
@@ -132,10 +130,10 @@ func NewKcp(conv uint32, user any) *KcpCB {
 
 	kcp.buffer = make([]byte, 3*(kcp.mtu+KCP_OVERHEAD))
 
-	kcp.snd_queue = list.New()
-	kcp.rcv_queue = list.New()
-	kcp.snd_buf = list.New()
-	kcp.rcv_buf = list.New()
+	kcp.snd_queue = list.NewObj()
+	kcp.rcv_queue = list.NewObj()
+	kcp.snd_buf = list.NewObj()
+	kcp.rcv_buf = list.NewObj()
 	kcp.state = 0
 	kcp.acklist = nil
 	kcp.ackblock = 0
@@ -720,7 +718,7 @@ func (k *KcpCB) Flush() {
 		offset int32
 	)
 	for i := int32(0); i < count; i++ {
-		if offset+KCP_OVERHEAD > int32(k.mtu) {
+		if offset+KCP_OVERHEAD > k.mtu {
 			k.output(k.buffer, offset)
 			offset = 0
 		}
@@ -758,7 +756,7 @@ func (k *KcpCB) Flush() {
 	// flush window probing commands
 	if k.probe&KCP_ASK_SEND > 0 {
 		seg.cmd = KCP_CMD_WASK
-		if offset+KCP_OVERHEAD > int32(k.mtu) {
+		if offset+KCP_OVERHEAD > k.mtu {
 			k.output(k.buffer, offset)
 			offset = 0
 		}
@@ -769,7 +767,7 @@ func (k *KcpCB) Flush() {
 	// flush window probing commands
 	if k.probe&KCP_ASK_TELL > 0 {
 		seg.cmd = KCP_CMD_WINS
-		if offset+KCP_OVERHEAD > int32(k.mtu) {
+		if offset+KCP_OVERHEAD > k.mtu {
 			k.output(k.buffer, offset)
 			offset = 0
 		}
@@ -792,8 +790,7 @@ func (k *KcpCB) Flush() {
 		}
 		var iter = k.snd_queue.Begin()
 		var tseg = iter.Value().(*segment)
-		var o bool
-		iter, o = k.snd_queue.DeleteContinueNext(iter)
+		o := k.snd_queue.Delete(iter)
 		if !o {
 			panic("kcp: flush delete node failed")
 		}
@@ -828,10 +825,10 @@ func (k *KcpCB) Flush() {
 	var (
 		change int32
 		lost   bool
-		iter   = k.snd_buf.Begin()
 	)
 	// flush data segments
-	for ; iter != k.snd_buf.End(); iter = iter.Next() {
+
+	for iter := k.snd_buf.Begin(); iter != k.snd_buf.End(); iter = iter.Next() {
 		var tseg = iter.Value().(*segment)
 		var needSend bool
 		if tseg.xmit == 0 {
@@ -869,7 +866,7 @@ func (k *KcpCB) Flush() {
 			tseg.wnd = seg.wnd
 			tseg.una = k.rcv_nxt
 			var need = KCP_OVERHEAD + tseg.dlen
-			if offset+need > int32(k.mtu) {
+			if offset+need > k.mtu {
 				k.output(k.buffer, offset)
 				offset = 0
 			}
@@ -908,9 +905,11 @@ func (k *KcpCB) Flush() {
 		if k.ssthresh < KCP_THRESH_MIN {
 			k.ssthresh = KCP_THRESH_MIN
 		}
+		k.cwnd = 1
+		k.incr = k.mss
 	}
 
-	if lost || k.cwnd < 1 {
+	if k.cwnd < 1 {
 		k.cwnd = 1
 		k.incr = k.mss
 	}
@@ -970,12 +969,17 @@ func (k *KcpCB) Check(current int32) int32 {
 		if diff < tm_packet {
 			tm_packet = diff
 		}
+		iter = iter.Next()
 	}
 
 	if tm_packet < tm_flush {
 		minimal = tm_packet
 	} else {
 		minimal = tm_flush
+	}
+
+	if minimal >= k.interval {
+		minimal = k.interval
 	}
 
 	return current + minimal
@@ -1017,6 +1021,8 @@ func (k *KcpCB) SetNodelay(nodelay, interval, resend, nc int32) {
 	if interval >= 0 {
 		if interval > 5000 {
 			interval = 5000
+		} else if interval < 10 {
+			interval = 10
 		}
 		k.interval = interval
 	}
