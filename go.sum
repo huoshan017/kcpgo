@@ -16,6 +16,8 @@ github.com/huoshan017/ponu v0.0.0-20220620090330-40e3ac436c7f h1:sW1CoBtbQ94tLe3
 github.com/huoshan017/ponu v0.0.0-20220620090330-40e3ac436c7f/go.mod h1:EbmZkFD0LGEIgTiETwJlkL1qO1oRoR0DTzXWPLLMhco=
 github.com/huoshan017/ponu v0.0.0-20220622141817-1b71f528c8de h1:vPngak2zG10toZBhpkKO1quYEasiED6ur1moE62L0Ps=
 github.com/huoshan017/ponu v0.0.0-20220622141817-1b71f528c8de/go.mod h1:EbmZkFD0LGEIgTiETwJlkL1qO1oRoR0DTzXWPLLMhco=
+github.com/huoshan017/ponu v0.0.0-20220625105549-0934e1dcaecd h1:0XH21P42RdrLmT+burkOAp/DN72e6tHRfqJ5OnqCHV0=
+github.com/huoshan017/ponu v0.0.0-20220625105549-0934e1dcaecd/go.mod h1:EbmZkFD0LGEIgTiETwJlkL1qO1oRoR0DTzXWPLLMhco=
 github.com/josharian/impl v1.1.0 h1:gafhg1OFVMq46ifdkBa8wp4hlGogjktjjA5h/2j4+2k=
 github.com/josharian/impl v1.1.0/go.mod h1:SQ6aJMP6xsJpGSD/36IIqrUdigLCYe9bz/9o5AKm6Aw=
 github.com/skratchdot/open-golang v0.0.0-20200116055534-eef842397966 h1:JIAuq3EEf9cgbU6AtGPK4CTG3Zf6CKMNqf0MHTggAUA=

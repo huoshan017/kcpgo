@@ -827,7 +827,6 @@ func (k *KcpCB) Flush() {
 		lost   bool
 	)
 	// flush data segments
-
 	for iter := k.snd_buf.Begin(); iter != k.snd_buf.End(); iter = iter.Next() {
 		var tseg = iter.Value().(*segment)
 		var needSend bool
@@ -836,7 +835,7 @@ func (k *KcpCB) Flush() {
 			tseg.rto = k.rx_rto
 			tseg.resendts = k.current + tseg.rto + rtomin
 			needSend = true
-		} else if timeDiff(k.current, tseg.resendts) >= 0 {
+		} else if diff := timeDiff(k.current, tseg.resendts); diff >= 0 {
 			tseg.xmit += 1
 			if k.nodelay == 0 {
 				tseg.rto += max(tseg.rto, k.rx_rto)

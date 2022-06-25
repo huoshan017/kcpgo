@@ -22,7 +22,9 @@ type delayPacket struct {
 }
 
 func newDelayPacket(data []byte) *delayPacket {
-	return &delayPacket{data: data}
+	var d = make([]byte, len(data))
+	copy(d, data)
+	return &delayPacket{data: d}
 }
 
 func (d delayPacket) getData() []byte {
@@ -106,7 +108,6 @@ func (s *latencySimulator) send(peer int32, data []byte) {
 	s.tx[peer] += 1
 	var r = s.rand[peer].rand()
 	if r < s.lostrate {
-		s.t.Logf("peer %v lost data %v, lost value %v", peer, data, r)
 		return
 	}
 	//s.t.Logf("peer %v lost value %v", peer, r)
@@ -202,7 +203,6 @@ func test(mode int32, t *testing.T) {
 			encode32(buffer[4:], current)
 			var data = buffer[:8]
 			kcps[0].Send(data)
-			t.Logf("kcps[0] send %v", data)
 		}
 
 		// 处理虚拟网络: 检测是否有udp包从0->1
@@ -212,7 +212,6 @@ func test(mode int32, t *testing.T) {
 				break
 			}
 			kcps[1].Input(buffer[:d])
-			t.Logf("kcps[1] input %v", buffer[:d])
 		}
 
 		// 处理虚拟网络: 检测是否有udp包从1->0
@@ -222,7 +221,6 @@ func test(mode int32, t *testing.T) {
 				break
 			}
 			kcps[0].Input(buffer[:d])
-			t.Logf("kcps[0] input %v", buffer[:d])
 		}
 
 		// kcps[1]接收到任何包都返回回去
@@ -232,16 +230,13 @@ func test(mode int32, t *testing.T) {
 			if d < 0 {
 				break
 			}
-			t.Logf("kcps[1] recv %v", buffer[:d])
 			kcps[1].Send(buffer[:d])
-			t.Logf("kcps[1] send %v", buffer[:d])
 		}
 
 		// kcps[0]收到kcps[1]的回射数据
 		for {
 			var d = kcps[0].Recv(buffer[:])
 			if d < 0 {
-				//t.Logf("kcps[0] no recv %v", d)
 				break
 			}
 			var sn = decode32(buffer[:])
