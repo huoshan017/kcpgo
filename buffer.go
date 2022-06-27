@@ -27,7 +27,7 @@ func getBuffer(s int32) []byte {
 	for i := 0; i < len(stepSize); i++ {
 		if stepSize[i] >= s {
 			b := stepPools[i].Get().([]byte)
-			return b[:s]
+			return b
 		}
 	}
 	return nil

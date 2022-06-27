@@ -1,6 +1,8 @@
 package kcp
 
 import (
+	"bytes"
+	"fmt"
 	"math/rand"
 	"testing"
 	"time"
@@ -287,4 +289,139 @@ func TestNormalKCP(t *testing.T) {
 
 func TestFastKCP(t *testing.T) {
 	test(2, t)
+}
+
+var letters = []byte("abcdefghijklmnopqrstuvwxyz01234567890~!@#$%^&*()_+-={}[]|:;'<>?/.,")
+var lettersLen = len(letters)
+
+func randBytes(n int, ran *rand.Rand) []byte {
+	b := make([]byte, n+2)
+	encode16(b, int16(n))
+	for i := 2; i < len(b); i++ {
+		r := ran.Int31n(int32(lettersLen))
+		b[i] = letters[r]
+	}
+	return b
+}
+
+func TestStreamKCP(t *testing.T) {
+	vnet = newLatencySimulator(t, 0, 60, 125, 1000)
+
+	var kcps = [2]*KcpCB{
+		NewKcp(0x11223344, int32(0)),
+		NewKcp(0x11223344, int32(1)),
+	}
+
+	for i := 0; i < 2; i++ {
+		kcps[i].SetOutput(output)
+	}
+
+	var (
+		current    int32 = currentMilli()
+		slap       int32 = current + 20
+		next       int32
+		dataList   [][]byte
+		maxDataLen int32      = 4500
+		ran        *rand.Rand = rand.New(rand.NewSource(time.Now().Unix()))
+	)
+
+	for i := 0; i < 2; i++ {
+		kcps[i].SetWndSize(128, 128)
+		kcps[i].SetNodelay(0, 10, 0, 0)
+		kcps[i].stream = 1
+	}
+
+	var buffer [5000]byte
+	var resultBuf bytes.Buffer
+	var dlen int16
+	var start = currentMilli()
+	for {
+		time.Sleep(time.Millisecond)
+		current = currentMilli()
+		for i := 0; i < 2; i++ {
+			kcps[i].Update(current)
+		}
+
+		// 每个20ms，kcps[0]发送数据
+		for ; current >= slap; slap += 20 {
+			var data = randBytes(int(maxDataLen), ran)
+			dataList = append(dataList, data[2:])
+			kcps[0].Send(data)
+		}
+
+		// 处理虚拟网络: 检测是否有udp包从0->1
+		for {
+			var d = vnet.recv(1, buffer[:])
+			if d < 0 {
+				break
+			}
+			kcps[1].Input(buffer[:d])
+		}
+
+		// 处理虚拟网络: 检测是否有udp包从1->0
+		for {
+			var d = vnet.recv(0, buffer[:])
+			if d < 0 {
+				break
+			}
+			kcps[0].Input(buffer[:d])
+		}
+
+		// kcps[1]接收到任何包都返回回去
+		for {
+			var d = kcps[1].Recv(buffer[:])
+			// 没有包就退出
+			if d < 0 {
+				break
+			}
+			kcps[1].Send(buffer[:d])
+		}
+
+		// kcps[0]收到kcps[1]的回射数据
+		var n int32
+		for {
+			var d = kcps[0].Recv(buffer[:])
+			if d < 0 {
+				break
+			}
+			resultBuf.Write(buffer[:d])
+			n += d
+		}
+
+		if n > 0 {
+			for {
+				if resultBuf.Len() < 2 {
+					break
+				}
+				if dlen == 0 {
+					resultBuf.Read(buffer[:2])
+					dlen = decode16(buffer[:2])
+				}
+				if resultBuf.Len() < int(dlen) {
+					break
+				}
+				resultBuf.Read(buffer[:dlen])
+				if !bytes.Equal(buffer[:dlen], dataList[0]) {
+					panic(fmt.Sprintf("received index %v data compare failed\r\nbuffer[:dl] %v\r\ndataList[next] %v", next, buffer[:dlen], dataList[0]))
+				}
+				dataList = dataList[1:]
+				if dlen < 100 {
+					t.Logf("[RECV] sn=%v, data=%v", next, buffer[:dlen])
+				} else {
+					t.Logf("[RECV] sn=%v", next)
+				}
+				next += 1
+				dlen = 0
+			}
+		}
+		if next > 1000 {
+			break
+		}
+	}
+	var cost = currentMilli() - start
+	vnet.clear()
+	for i := 0; i < 2; i++ {
+		kcps[i].Release()
+	}
+	t.Logf("stream mode result (%dms):", cost)
 }

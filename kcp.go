@@ -28,36 +28,42 @@ func (s *segment) copyData(data []byte, mss int32) int32 {
 		return -1
 	}
 	var (
-		dlen           = int32(len(data))
-		offset, copied int32
+		dlen = int32(len(data))
+		nbuf []byte
 	)
 	if s.data == nil {
-		if dlen <= mss {
-			s.data = getBuffer(dlen)
+		if dlen < mss {
+			nbuf = getBuffer(dlen)
 		} else {
-			s.data = getBuffer(mss)
+			nbuf = getBuffer(mss)
 		}
+		if int(mss) < len(nbuf) {
+			nbuf = nbuf[:mss]
+		}
+		s.data = nbuf
 	} else {
 		var left = int32(len(s.data)) - s.dlen
 		var canGrow = mss > int32(len(s.data))
 		if left <= 0 && !canGrow {
 			return 0
 		}
+		// need grow
 		if dlen > left && canGrow { // left space of s.data is not enough
 			// s.data length is max
-			var nbuf []byte
-			if dlen+s.dlen <= mss {
+			if dlen+s.dlen < mss {
 				nbuf = getBuffer(dlen + s.dlen)
 			} else {
 				nbuf = getBuffer(mss)
 			}
-			copied = int32(copy(nbuf, s.data))
-			s.dlen = copied
-			offset += copied
+			if int(mss) < len(nbuf) {
+				nbuf = nbuf[:mss]
+			}
+			copy(nbuf, s.data[:s.dlen])
 			putBuffer(s.data)
+			s.data = nbuf
 		}
 	}
-	copied = int32(copy(s.data[offset:], data))
+	var copied = int32(copy(s.data[s.dlen:], data))
 	s.dlen += copied
 	return copied
 }
@@ -344,9 +350,13 @@ func (k *KcpCB) Send(data []byte) int32 {
 	} else {
 		count = (left + int32(k.mss) - 1) / int32(k.mss)
 	}
-	// to long data
+
 	if count >= KCP_WND_RCV {
 		return -2
+	}
+
+	if count == 0 {
+		count = 1
 	}
 
 	// fragment
