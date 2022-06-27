@@ -157,37 +157,43 @@ func output(data []byte, dlen int32, user any) int32 {
 func test(mode int32, t *testing.T) {
 	vnet = newLatencySimulator(t, 10, 60, 125, 1000)
 
-	var kcps = [2]*KcpCB{
-		NewKcp(0x11223344, int32(0)),
-		NewKcp(0x11223344, int32(1)),
-	}
-
-	for i := 0; i < 2; i++ {
-		kcps[i].SetOutput(output)
-	}
-
 	var (
+		kcps                                     = [2]*KcpCB{}
 		current                            int32 = currentMilli()
 		slap                               int32 = current + 20
 		index, next, sumrtt, count, maxrtt int32
 	)
 
-	for i := 0; i < 2; i++ {
-		kcps[i].SetWndSize(128, 128)
+	switch mode {
+	case 0:
+		kcps[0] = NewKcp(0x11223344, int32(0), output, WithWnd(128, 128), WithInterval(10))
+		kcps[1] = NewKcp(0x11223344, int32(1), output, WithWnd(128, 128), WithInterval(10))
+	case 1:
+		kcps[0] = NewKcp(0x11223344, int32(0), output, WithWnd(128, 128), WithInterval(10), WithNoCwnd(true))
+		kcps[1] = NewKcp(0x11223344, int32(1), output, WithWnd(128, 128), WithInterval(10), WithNoCwnd(true))
+	default:
+		kcps[0] = NewKcp(0x11223344, int32(0), output, WithWnd(128, 128), WithNodelay(2), WithInterval(10), WithFastResend(2), WithNoCwnd(true))
+		kcps[1] = NewKcp(0x11223344, int32(1), output, WithWnd(128, 128), WithNodelay(2), WithInterval(10), WithFastResend(1), WithNoCwnd(true), WithMinRTO(10))
 	}
 
-	if mode == 0 {
-		kcps[0].SetNodelay(0, 10, 0, 0)
-		kcps[1].SetNodelay(0, 10, 0, 0)
-	} else if mode == 1 {
-		kcps[0].SetNodelay(0, 10, 0, 1)
-		kcps[1].SetNodelay(0, 10, 0, 1)
-	} else {
-		kcps[0].SetNodelay(2, 10, 2, 1)
-		kcps[1].SetNodelay(2, 10, 2, 1)
-		kcps[0].rx_minrto = 10
-		kcps[0].fastresend = 1
-	}
+	/*
+		for i := 0; i < 2; i++ {
+			kcps[i].SetWndSize(128, 128)
+		}
+
+		if mode == 0 {
+			kcps[0].SetNodelay(0, 10, 0, false)
+			kcps[1].SetNodelay(0, 10, 0, false)
+		} else if mode == 1 {
+			kcps[0].SetNodelay(0, 10, 0, true)
+			kcps[1].SetNodelay(0, 10, 0, true)
+		} else {
+			kcps[0].SetNodelay(2, 10, 2, true)
+			kcps[1].SetNodelay(2, 10, 2, true)
+			kcps[0].options.rx_minrto = 10
+			kcps[0].options.fastresend = 1
+		}
+	*/
 
 	var buffer [1500]byte
 	var start = currentMilli()
@@ -308,12 +314,8 @@ func TestStreamKCP(t *testing.T) {
 	vnet = newLatencySimulator(t, 0, 60, 125, 1000)
 
 	var kcps = [2]*KcpCB{
-		NewKcp(0x11223344, int32(0)),
-		NewKcp(0x11223344, int32(1)),
-	}
-
-	for i := 0; i < 2; i++ {
-		kcps[i].SetOutput(output)
+		NewKcp(0x11223344, int32(0), output, WithStream(true), WithWnd(128, 128), WithInterval(10)),
+		NewKcp(0x11223344, int32(1), output, WithStream(true), WithWnd(128, 128), WithInterval(10)),
 	}
 
 	var (
@@ -324,12 +326,6 @@ func TestStreamKCP(t *testing.T) {
 		maxDataLen int32      = 4500
 		ran        *rand.Rand = rand.New(rand.NewSource(time.Now().Unix()))
 	)
-
-	for i := 0; i < 2; i++ {
-		kcps[i].SetWndSize(128, 128)
-		kcps[i].SetNodelay(0, 10, 0, 0)
-		kcps[i].stream = 1
-	}
 
 	var buffer [5000]byte
 	var resultBuf bytes.Buffer
@@ -344,7 +340,8 @@ func TestStreamKCP(t *testing.T) {
 
 		// 每个20ms，kcps[0]发送数据
 		for ; current >= slap; slap += 20 {
-			var data = randBytes(int(maxDataLen), ran)
+			var l = ran.Int31n(maxDataLen) + 1
+			var data = randBytes(int(l), ran)
 			dataList = append(dataList, data[2:])
 			kcps[0].Send(data)
 		}

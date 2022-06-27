@@ -86,81 +86,87 @@ func (s *segment) clear() {
 }
 
 type KcpCB struct {
-	conv                                   uint32
-	mtu, mss, state                        int32
-	snd_una, snd_nxt, rcv_nxt              int32
-	ssthresh                               int32
-	rx_rttval, rx_srtt, rx_rto, rx_minrto  int32
-	snd_wnd, rcv_wnd, rmt_wnd, cwnd, probe int32
-	current, interval, ts_flush            int32
-	nodelay                                int32
-	ts_probe, probe_wait                   int32
-	dead_link, incr                        int32
-	snd_queue                              list.List
-	rcv_queue                              list.List
-	snd_buf                                list.List
-	rcv_buf                                list.List
-	acklist                                []int32
-	ackcount                               int32
-	ackblock                               int32
-	user                                   interface{}
-	buffer                                 []byte
-	fastresend                             int32
-	fastlimit                              int32
-	nocwnd, stream                         int32
-	logmask                                int32
-	output_func                            func(buf []byte, len int32, user any) int32
-	updated                                bool
-	writelog                               func(log string, kcp *KcpCB, user any)
+	options                   Options
+	conv                      uint32
+	mss, state                int32
+	snd_una, snd_nxt, rcv_nxt int32
+	rx_rttval, rx_srtt        int32
+	rmt_wnd, cwnd, probe      int32
+	current, ts_flush         int32
+	ts_probe, probe_wait      int32
+	incr                      int32
+	snd_queue                 list.List
+	rcv_queue                 list.List
+	snd_buf                   list.List
+	rcv_buf                   list.List
+	acklist                   []int32
+	ackcount                  int32
+	ackblock                  int32
+	user                      interface{}
+	buffer                    []byte
+	output_func               func(buf []byte, len int32, user any) int32
+	updated                   bool
 }
 
 // 创建kcp
-func NewKcp(conv uint32, user any) *KcpCB {
+func NewKcp(conv uint32, user any, sendFunc func([]byte, int32, any) int32, options ...Option) *KcpCB {
 	kcp := &KcpCB{}
+	for i := 0; i < len(options); i++ {
+		options[i](&kcp.options)
+	}
 	kcp.conv = conv
 	kcp.user = user
-	kcp.snd_una = 0
-	kcp.snd_nxt = 0
-	kcp.rcv_nxt = 0
-	kcp.ts_probe = 0
-	kcp.probe_wait = 0
-	kcp.snd_wnd = KCP_WND_SND
-	kcp.rcv_wnd = KCP_WND_RCV
-	kcp.rmt_wnd = KCP_WND_RCV
-	kcp.cwnd = 0
-	kcp.incr = 0
-	kcp.probe = 0
-	kcp.mtu = KCP_MTU_DEF
-	kcp.mss = kcp.mtu - KCP_OVERHEAD
-	kcp.stream = 0
-
-	kcp.buffer = make([]byte, 3*(kcp.mtu+KCP_OVERHEAD))
-
 	kcp.snd_queue = list.NewObj()
 	kcp.rcv_queue = list.NewObj()
 	kcp.snd_buf = list.NewObj()
 	kcp.rcv_buf = list.NewObj()
-	kcp.state = 0
-	kcp.acklist = nil
-	kcp.ackblock = 0
-	kcp.ackcount = 0
-	kcp.rx_srtt = 0
-	kcp.rx_rttval = 0
-	kcp.rx_rto = KCP_RTO_DEF
-	kcp.rx_minrto = KCP_RTO_MIN
-	kcp.current = 0
-	kcp.interval = KCP_INTERVAL
-	kcp.ts_flush = KCP_INTERVAL
-	kcp.nodelay = 0
-	kcp.logmask = 0
-	kcp.ssthresh = KCP_THRESH_INIT
-	kcp.fastresend = 0
-	kcp.fastlimit = KCP_FASTACK_LIMIT
-	kcp.nocwnd = 0
-	kcp.dead_link = KCP_DEADLINK
-	kcp.output_func = nil
-	kcp.writelog = nil
+	kcp.output_func = sendFunc
+	kcp.init()
 	return kcp
+}
+
+func (k *KcpCB) init() {
+	if k.options.GetSendWnd() == 0 {
+		k.options.snd_wnd = KCP_WND_SND
+	}
+	if k.options.rcv_wnd == 0 {
+		k.options.rcv_wnd = KCP_WND_RCV
+	}
+	k.rmt_wnd = k.options.rcv_wnd
+
+	if k.options.mtu == 0 {
+		k.options.mtu = KCP_MTU_DEF
+	} else {
+		k.SetMtu(k.options.mtu)
+	}
+	k.mss = k.options.mtu - KCP_OVERHEAD
+	k.buffer = make([]byte, 3*(k.options.mtu+KCP_OVERHEAD))
+	if k.options.rx_rto == 0 {
+		k.options.rx_rto = KCP_RTO_DEF
+	}
+	if k.options.rx_minrto == 0 {
+		k.options.rx_minrto = KCP_RTO_MIN
+	}
+	if k.options.nodelay > 0 {
+		k.options.rx_minrto = KCP_RTO_NDL
+	} else {
+		k.options.rx_minrto = KCP_RTO_MIN
+	}
+	if k.options.interval == 0 {
+		k.options.interval = KCP_INTERVAL
+	} else {
+		k.SetInterval(k.options.interval)
+	}
+	k.ts_flush = KCP_INTERVAL
+	if k.options.ssthresh == 0 {
+		k.options.ssthresh = KCP_THRESH_INIT
+	}
+	if k.options.fastlimit == 0 {
+		k.options.fastlimit = KCP_FASTACK_LIMIT
+	}
+	if k.options.dead_link == 0 {
+		k.options.dead_link = KCP_DEADLINK
+	}
 }
 
 func (k *KcpCB) Release() {
@@ -206,10 +212,6 @@ func (k *KcpCB) Release() {
 	}
 }
 
-func (k *KcpCB) SetOutput(output func(buf []byte, len int32, user any) int32) {
-	k.output_func = output
-}
-
 func (k *KcpCB) Recv(buf []byte) int32 {
 	return k.recv(buf, false)
 }
@@ -232,7 +234,7 @@ func (k *KcpCB) recv(buf []byte, isPeek bool) int32 {
 	}
 
 	var recover bool
-	if k.rcv_queue.GetLength() >= int32(k.rcv_wnd) {
+	if k.rcv_queue.GetLength() >= int32(k.options.rcv_wnd) {
 		recover = true
 	}
 
@@ -274,7 +276,7 @@ func (k *KcpCB) recv(buf []byte, isPeek bool) int32 {
 	iter = k.rcv_buf.Begin()
 	for iter != k.rcv_buf.End() {
 		seg := iter.Value().(*segment)
-		if seg.sn != k.rcv_nxt || k.rcv_queue.GetLength() >= int32(k.rcv_wnd) {
+		if seg.sn != k.rcv_nxt || k.rcv_queue.GetLength() >= int32(k.options.rcv_wnd) {
 			break
 		}
 
@@ -286,7 +288,7 @@ func (k *KcpCB) recv(buf []byte, isPeek bool) int32 {
 		k.rcv_nxt += 1
 	}
 
-	if recover && k.rcv_queue.GetLength() < int32(k.rcv_wnd) {
+	if recover && k.rcv_queue.GetLength() < int32(k.options.rcv_wnd) {
 		k.probe |= KCP_ASK_TELL
 	}
 
@@ -326,7 +328,7 @@ func (k *KcpCB) Send(data []byte) int32 {
 
 	var copied int32
 	// stream mode, append to previous segment in streaming mode (if possible)
-	if k.stream != 0 {
+	if k.options.stream {
 		if !k.snd_queue.IsEmpty() {
 			iter := k.snd_queue.RBegin()
 			seg := iter.Value().(*segment)
@@ -367,7 +369,7 @@ func (k *KcpCB) Send(data []byte) int32 {
 			putSeg(seg)
 			return -2
 		}
-		if k.stream == 0 {
+		if !k.options.stream {
 			seg.frg = count - i - 1
 		} else {
 			seg.frg = 0
@@ -377,6 +379,10 @@ func (k *KcpCB) Send(data []byte) int32 {
 	}
 
 	return 0
+}
+
+func (k *KcpCB) IsDead() bool {
+	return k.state == 0x7fffffff
 }
 
 func (k *KcpCB) updateAck(rtt int32) {
@@ -395,8 +401,8 @@ func (k *KcpCB) updateAck(rtt int32) {
 			k.rx_srtt = 1
 		}
 	}
-	rto = k.rx_srtt + max(k.interval, 4*k.rx_rttval)
-	k.rx_rto = bound(k.rx_minrto, rto, KCP_RTO_MAX)
+	rto = k.rx_srtt + max(k.options.interval, 4*k.rx_rttval)
+	k.options.rx_rto = bound(k.options.rx_minrto, rto, KCP_RTO_MAX)
 }
 
 func (k *KcpCB) shrinkBuf() {
@@ -500,7 +506,7 @@ func (k *KcpCB) parseData(seg *segment) {
 		sn     = seg.sn
 		repeat bool
 	)
-	if timeDiff(sn, k.rcv_nxt+k.rcv_wnd) >= 0 || timeDiff(sn, k.rcv_nxt) < 0 {
+	if timeDiff(sn, k.rcv_nxt+k.options.rcv_wnd) >= 0 || timeDiff(sn, k.rcv_nxt) < 0 {
 		putSeg(seg)
 		return
 	}
@@ -528,7 +534,7 @@ func (k *KcpCB) parseData(seg *segment) {
 	iter = k.rcv_buf.Begin()
 	for iter != k.rcv_buf.End() {
 		seg = iter.Value().(*segment)
-		if seg.sn == k.rcv_nxt && k.rcv_queue.GetLength() < k.rcv_wnd {
+		if seg.sn == k.rcv_nxt && k.rcv_queue.GetLength() < k.options.rcv_wnd {
 			var o bool
 			iter, o = k.rcv_buf.DeleteContinueNext(iter)
 			if !o {
@@ -618,7 +624,7 @@ func (k *KcpCB) Input(data []byte) int32 {
 				}
 			}
 		case KCP_CMD_PUSH:
-			if timeDiff(sn, k.rcv_nxt+k.rcv_wnd) < 0 {
+			if timeDiff(sn, k.rcv_nxt+k.options.rcv_wnd) < 0 {
 				k.ackPush(sn, ts)
 				if timeDiff(sn, k.rcv_nxt) >= 0 {
 					var seg = getSeg()
@@ -654,7 +660,7 @@ func (k *KcpCB) Input(data []byte) int32 {
 	if timeDiff(k.snd_una, prevUna) > 0 {
 		if k.cwnd < k.rmt_wnd {
 			var mss int32 = k.mss
-			if k.cwnd < k.ssthresh {
+			if k.cwnd < k.options.ssthresh {
 				k.cwnd += 1
 				k.incr += mss
 			} else {
@@ -698,8 +704,8 @@ func (k *KcpCB) encodeSeg(data []byte, seg *segment) int32 {
 }
 
 func (k *KcpCB) wndUnused() int32 {
-	if k.rcv_queue.GetLength() < k.rcv_wnd {
-		return k.rcv_wnd - k.rcv_queue.GetLength()
+	if k.rcv_queue.GetLength() < k.options.rcv_wnd {
+		return k.options.rcv_wnd - k.rcv_queue.GetLength()
 	}
 	return 0
 }
@@ -728,7 +734,7 @@ func (k *KcpCB) Flush() {
 		offset int32
 	)
 	for i := int32(0); i < count; i++ {
-		if offset+KCP_OVERHEAD > k.mtu {
+		if offset+KCP_OVERHEAD > k.options.mtu {
 			k.output(k.buffer, offset)
 			offset = 0
 		}
@@ -766,7 +772,7 @@ func (k *KcpCB) Flush() {
 	// flush window probing commands
 	if k.probe&KCP_ASK_SEND > 0 {
 		seg.cmd = KCP_CMD_WASK
-		if offset+KCP_OVERHEAD > k.mtu {
+		if offset+KCP_OVERHEAD > k.options.mtu {
 			k.output(k.buffer, offset)
 			offset = 0
 		}
@@ -777,7 +783,7 @@ func (k *KcpCB) Flush() {
 	// flush window probing commands
 	if k.probe&KCP_ASK_TELL > 0 {
 		seg.cmd = KCP_CMD_WINS
-		if offset+KCP_OVERHEAD > k.mtu {
+		if offset+KCP_OVERHEAD > k.options.mtu {
 			k.output(k.buffer, offset)
 			offset = 0
 		}
@@ -788,8 +794,8 @@ func (k *KcpCB) Flush() {
 	k.probe = 0
 
 	// calculate window size
-	var cwnd = min(k.snd_wnd, k.rmt_wnd)
-	if k.nocwnd == 0 {
+	var cwnd = min(k.options.snd_wnd, k.rmt_wnd)
+	if !k.options.nocwnd {
 		cwnd = min(k.cwnd, cwnd)
 	}
 
@@ -813,21 +819,21 @@ func (k *KcpCB) Flush() {
 		k.snd_nxt += 1
 		tseg.una = k.rcv_nxt
 		tseg.resendts = k.current
-		tseg.rto = k.rx_rto
+		tseg.rto = k.options.rx_rto
 		tseg.fastack = 0
 		tseg.xmit = 0
 	}
 
 	// calculate resent
 	var resent = func() int32 {
-		if k.fastresend > 0 {
-			return k.fastresend
+		if k.options.fastresend > 0 {
+			return k.options.fastresend
 		}
 		return 0x7fffffff
 	}()
 	var rtomin = func() int32 {
-		if k.nodelay == 0 {
-			return k.rx_rto >> 3
+		if k.options.nodelay == 0 {
+			return k.options.rx_rto >> 3
 		}
 		return 0
 	}()
@@ -842,19 +848,19 @@ func (k *KcpCB) Flush() {
 		var needSend bool
 		if tseg.xmit == 0 {
 			tseg.xmit += 1
-			tseg.rto = k.rx_rto
+			tseg.rto = k.options.rx_rto
 			tseg.resendts = k.current + tseg.rto + rtomin
 			needSend = true
 		} else if diff := timeDiff(k.current, tseg.resendts); diff >= 0 {
 			tseg.xmit += 1
-			if k.nodelay == 0 {
-				tseg.rto += max(tseg.rto, k.rx_rto)
+			if k.options.nodelay == 0 {
+				tseg.rto += max(tseg.rto, k.options.rx_rto)
 			} else {
 				var step = func() int32 {
-					if k.nodelay < 2 {
+					if k.options.nodelay < 2 {
 						return tseg.rto
 					}
-					return k.rx_rto
+					return k.options.rx_rto
 				}()
 				tseg.rto += step / 2
 			}
@@ -862,7 +868,7 @@ func (k *KcpCB) Flush() {
 			lost = true
 			needSend = true
 		} else if tseg.fastack >= resent {
-			if tseg.xmit <= k.fastlimit || k.fastlimit <= 0 {
+			if tseg.xmit <= k.options.fastlimit || k.options.fastlimit <= 0 {
 				tseg.xmit += 1
 				tseg.fastack = 0
 				tseg.resendts = k.current + tseg.rto
@@ -875,7 +881,7 @@ func (k *KcpCB) Flush() {
 			tseg.wnd = seg.wnd
 			tseg.una = k.rcv_nxt
 			var need = KCP_OVERHEAD + tseg.dlen
-			if offset+need > k.mtu {
+			if offset+need > k.options.mtu {
 				k.output(k.buffer, offset)
 				offset = 0
 			}
@@ -887,7 +893,7 @@ func (k *KcpCB) Flush() {
 				offset += tseg.dlen
 			}
 
-			if tseg.xmit >= k.dead_link {
+			if tseg.xmit >= k.options.dead_link {
 				k.state = 0x7fffffff
 			}
 		}
@@ -901,18 +907,18 @@ func (k *KcpCB) Flush() {
 	// update ssthresh
 	if change > 0 {
 		var inflight = k.snd_nxt - k.snd_una
-		k.ssthresh = inflight / 2
-		if k.ssthresh < KCP_THRESH_MIN {
-			k.ssthresh = KCP_THRESH_MIN
+		k.options.ssthresh = inflight / 2
+		if k.options.ssthresh < KCP_THRESH_MIN {
+			k.options.ssthresh = KCP_THRESH_MIN
 		}
-		k.cwnd = k.ssthresh + resent
+		k.cwnd = k.options.ssthresh + resent
 		k.incr = k.cwnd * k.mss
 	}
 
 	if lost {
-		k.ssthresh = cwnd / 2
-		if k.ssthresh < KCP_THRESH_MIN {
-			k.ssthresh = KCP_THRESH_MIN
+		k.options.ssthresh = cwnd / 2
+		if k.options.ssthresh < KCP_THRESH_MIN {
+			k.options.ssthresh = KCP_THRESH_MIN
 		}
 		k.cwnd = 1
 		k.incr = k.mss
@@ -938,9 +944,9 @@ func (k *KcpCB) Update(current int32) {
 	}
 
 	if slap >= 0 {
-		k.ts_flush += k.interval
+		k.ts_flush += k.options.interval
 		if timeDiff(k.current, k.ts_flush) >= 0 {
-			k.ts_flush = k.current + k.interval
+			k.ts_flush = k.current + k.options.interval
 		}
 		k.Flush()
 	}
@@ -987,8 +993,8 @@ func (k *KcpCB) Check(current int32) int32 {
 		minimal = tm_flush
 	}
 
-	if minimal >= k.interval {
-		minimal = k.interval
+	if minimal >= k.options.interval {
+		minimal = k.options.interval
 	}
 
 	return current + minimal
@@ -999,12 +1005,12 @@ func (k *KcpCB) SetMtu(mtu int32) int32 {
 		return -1
 	}
 
-	if int32(k.mtu) == mtu {
+	if int32(k.options.mtu) == mtu {
 		return 0
 	}
 
-	k.mtu = mtu
-	k.mss = k.mtu - KCP_OVERHEAD
+	k.options.mtu = mtu
+	k.mss = k.options.mtu - KCP_OVERHEAD
 	k.buffer = make([]byte, (mtu+KCP_OVERHEAD)*3)
 	return 0
 }
@@ -1015,40 +1021,33 @@ func (k *KcpCB) SetInterval(interval int32) {
 	} else if interval < 10 {
 		interval = 10
 	}
-	k.interval = interval
+	k.options.interval = interval
 }
 
-func (k *KcpCB) SetNodelay(nodelay, interval, resend, nc int32) {
+func (k *KcpCB) SetNodelay(nodelay, interval, resend int32, nc bool) {
 	if nodelay >= 0 {
-		k.nodelay = nodelay
+		k.options.nodelay = nodelay
 		if nodelay > 0 {
-			k.rx_minrto = KCP_RTO_NDL
+			k.options.rx_minrto = KCP_RTO_NDL
 		} else {
-			k.rx_minrto = KCP_RTO_MIN
+			k.options.rx_minrto = KCP_RTO_MIN
 		}
 	}
 	if interval >= 0 {
-		if interval > 5000 {
-			interval = 5000
-		} else if interval < 10 {
-			interval = 10
-		}
-		k.interval = interval
+		k.SetInterval(interval)
 	}
 	if resend >= 0 {
-		k.fastresend = resend
+		k.options.fastresend = resend
 	}
-	if nc >= 0 {
-		k.nocwnd = nc
-	}
+	k.options.nocwnd = nc
 }
 
 func (k *KcpCB) SetWndSize(sndWnd, rcvWnd int32) {
 	if sndWnd > 0 {
-		k.snd_wnd = sndWnd
+		k.options.snd_wnd = sndWnd
 	}
 	if rcvWnd > 0 {
-		k.rcv_wnd = rcvWnd
+		k.options.rcv_wnd = rcvWnd
 	}
 }
 
