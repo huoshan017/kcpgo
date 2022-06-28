@@ -112,7 +112,6 @@ func (s *latencySimulator) send(peer int32, data []byte) {
 	if r < s.lostrate {
 		return
 	}
-	//s.t.Logf("peer %v lost value %v", peer, r)
 	if s.p[peer].GetLength() >= s.nmax {
 		return
 	}
@@ -148,9 +147,9 @@ var (
 	vnet *latencySimulator
 )
 
-func output(data []byte, dlen int32, user any) int32 {
+func output(data []byte, user any) int32 {
 	var peer = user.(int32)
-	vnet.send(peer, data[:dlen])
+	vnet.send(peer, data)
 	return 0
 }
 
@@ -166,34 +165,15 @@ func test(mode int32, t *testing.T) {
 
 	switch mode {
 	case 0:
-		kcps[0] = NewKcp(0x11223344, int32(0), output, WithWnd(128, 128), WithInterval(10))
-		kcps[1] = NewKcp(0x11223344, int32(1), output, WithWnd(128, 128), WithInterval(10))
+		kcps[0] = New(0x11223344, int32(0), output, WithWnd(128, 128), WithInterval(10))
+		kcps[1] = New(0x11223344, int32(1), output, WithWnd(128, 128), WithInterval(10))
 	case 1:
-		kcps[0] = NewKcp(0x11223344, int32(0), output, WithWnd(128, 128), WithInterval(10), WithNoCwnd(true))
-		kcps[1] = NewKcp(0x11223344, int32(1), output, WithWnd(128, 128), WithInterval(10), WithNoCwnd(true))
+		kcps[0] = New(0x11223344, int32(0), output, WithWnd(128, 128), WithInterval(10), WithNoCwnd(true))
+		kcps[1] = New(0x11223344, int32(1), output, WithWnd(128, 128), WithInterval(10), WithNoCwnd(true))
 	default:
-		kcps[0] = NewKcp(0x11223344, int32(0), output, WithWnd(128, 128), WithNodelay(2), WithInterval(10), WithFastResend(2), WithNoCwnd(true))
-		kcps[1] = NewKcp(0x11223344, int32(1), output, WithWnd(128, 128), WithNodelay(2), WithInterval(10), WithFastResend(1), WithNoCwnd(true), WithMinRTO(10))
+		kcps[0] = New(0x11223344, int32(0), output, WithWnd(128, 128), WithNodelay(2), WithInterval(10), WithFastResend(2), WithNoCwnd(true))
+		kcps[1] = New(0x11223344, int32(1), output, WithWnd(128, 128), WithNodelay(2), WithInterval(10), WithFastResend(1), WithNoCwnd(true), WithMinRTO(10))
 	}
-
-	/*
-		for i := 0; i < 2; i++ {
-			kcps[i].SetWndSize(128, 128)
-		}
-
-		if mode == 0 {
-			kcps[0].SetNodelay(0, 10, 0, false)
-			kcps[1].SetNodelay(0, 10, 0, false)
-		} else if mode == 1 {
-			kcps[0].SetNodelay(0, 10, 0, true)
-			kcps[1].SetNodelay(0, 10, 0, true)
-		} else {
-			kcps[0].SetNodelay(2, 10, 2, true)
-			kcps[1].SetNodelay(2, 10, 2, true)
-			kcps[0].options.rx_minrto = 10
-			kcps[0].options.fastresend = 1
-		}
-	*/
 
 	var buffer [1500]byte
 	var start = currentMilli()
@@ -204,7 +184,6 @@ func test(mode int32, t *testing.T) {
 			kcps[i].Update(current)
 		}
 
-		// 每个20ms，kcps[0]发送数据
 		for ; current >= slap; slap += 20 {
 			encode32(buffer[:], index)
 			index += 1
@@ -213,7 +192,6 @@ func test(mode int32, t *testing.T) {
 			kcps[0].Send(data)
 		}
 
-		// 处理虚拟网络: 检测是否有udp包从0->1
 		for {
 			var d = vnet.recv(1, buffer[:])
 			if d < 0 {
@@ -222,7 +200,6 @@ func test(mode int32, t *testing.T) {
 			kcps[1].Input(buffer[:d])
 		}
 
-		// 处理虚拟网络: 检测是否有udp包从1->0
 		for {
 			var d = vnet.recv(0, buffer[:])
 			if d < 0 {
@@ -231,17 +208,14 @@ func test(mode int32, t *testing.T) {
 			kcps[0].Input(buffer[:d])
 		}
 
-		// kcps[1]接收到任何包都返回回去
 		for {
 			var d = kcps[1].Recv(buffer[:])
-			// 没有包就退出
 			if d < 0 {
 				break
 			}
 			kcps[1].Send(buffer[:d])
 		}
 
-		// kcps[0]收到kcps[1]的回射数据
 		for {
 			var d = kcps[0].Recv(buffer[:])
 			if d < 0 {
@@ -310,15 +284,14 @@ func randBytes(n int, ran *rand.Rand) []byte {
 	return b
 }
 
-func TestStreamKCP(t *testing.T) {
+func testStreamKCP(t *testing.T, nocwnd bool) {
 	vnet = newLatencySimulator(t, 0, 60, 125, 1000)
 
-	var kcps = [2]*KcpCB{
-		NewKcp(0x11223344, int32(0), output, WithStream(true), WithWnd(128, 128), WithInterval(10)),
-		NewKcp(0x11223344, int32(1), output, WithStream(true), WithWnd(128, 128), WithInterval(10)),
-	}
-
 	var (
+		kcps = [2]*KcpCB{
+			New(0x11223344, int32(0), output, WithStream(true), WithWnd(128, 128), WithInterval(10), WithNoCwnd(nocwnd)),
+			New(0x11223344, int32(1), output, WithStream(true), WithWnd(128, 128), WithInterval(10), WithNoCwnd(nocwnd)),
+		}
 		current    int32 = currentMilli()
 		slap       int32 = current + 20
 		next       int32
@@ -338,7 +311,6 @@ func TestStreamKCP(t *testing.T) {
 			kcps[i].Update(current)
 		}
 
-		// 每个20ms，kcps[0]发送数据
 		for ; current >= slap; slap += 20 {
 			var l = ran.Int31n(maxDataLen) + 1
 			var data = randBytes(int(l), ran)
@@ -346,7 +318,6 @@ func TestStreamKCP(t *testing.T) {
 			kcps[0].Send(data)
 		}
 
-		// 处理虚拟网络: 检测是否有udp包从0->1
 		for {
 			var d = vnet.recv(1, buffer[:])
 			if d < 0 {
@@ -355,7 +326,6 @@ func TestStreamKCP(t *testing.T) {
 			kcps[1].Input(buffer[:d])
 		}
 
-		// 处理虚拟网络: 检测是否有udp包从1->0
 		for {
 			var d = vnet.recv(0, buffer[:])
 			if d < 0 {
@@ -364,17 +334,14 @@ func TestStreamKCP(t *testing.T) {
 			kcps[0].Input(buffer[:d])
 		}
 
-		// kcps[1]接收到任何包都返回回去
 		for {
 			var d = kcps[1].Recv(buffer[:])
-			// 没有包就退出
 			if d < 0 {
 				break
 			}
 			kcps[1].Send(buffer[:d])
 		}
 
-		// kcps[0]收到kcps[1]的回射数据
 		var n int32
 		for {
 			var d = kcps[0].Recv(buffer[:])
@@ -421,4 +388,12 @@ func TestStreamKCP(t *testing.T) {
 		kcps[i].Release()
 	}
 	t.Logf("stream mode result (%dms):", cost)
+}
+
+func TestStreamWithCwnd(t *testing.T) {
+	testStreamKCP(t, false)
+}
+
+func TestStreamNoCwnd(t *testing.T) {
+	testStreamKCP(t, true)
 }

@@ -104,12 +104,12 @@ type KcpCB struct {
 	ackblock                  int32
 	user                      interface{}
 	buffer                    []byte
-	output_func               func(buf []byte, len int32, user any) int32
+	output_func               func(buf []byte, user any) int32
 	updated                   bool
 }
 
 // 创建kcp
-func NewKcp(conv uint32, user any, sendFunc func([]byte, int32, any) int32, options ...Option) *KcpCB {
+func New(conv uint32, user any, outputFunc func([]byte, any) int32, options ...Option) *KcpCB {
 	kcp := &KcpCB{}
 	for i := 0; i < len(options); i++ {
 		options[i](&kcp.options)
@@ -120,7 +120,7 @@ func NewKcp(conv uint32, user any, sendFunc func([]byte, int32, any) int32, opti
 	kcp.rcv_queue = list.NewObj()
 	kcp.snd_buf = list.NewObj()
 	kcp.rcv_buf = list.NewObj()
-	kcp.output_func = sendFunc
+	kcp.output_func = outputFunc
 	kcp.init()
 	return kcp
 }
@@ -711,7 +711,7 @@ func (k *KcpCB) wndUnused() int32 {
 }
 
 func (k *KcpCB) output(data []byte, dlen int32) {
-	k.output_func(data, dlen, k.user)
+	k.output_func(data[:dlen], k.user)
 }
 
 func (k *KcpCB) Flush() {
