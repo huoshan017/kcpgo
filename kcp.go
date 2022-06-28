@@ -109,7 +109,7 @@ type KcpCB struct {
 }
 
 // 创建kcp
-func New[T any](conv uint32, user T, outputFunc func([]byte, any) int32, options ...Option) *KcpCB {
+func New(conv uint32, user any, outputFunc func([]byte, any) int32, options ...Option) *KcpCB {
 	kcp := &KcpCB{}
 	for i := 0; i < len(options); i++ {
 		options[i](&kcp.options)

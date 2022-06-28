@@ -165,14 +165,14 @@ func test(mode int32, t *testing.T) {
 
 	switch mode {
 	case 0:
-		kcps[0] = New[int32](0x11223344, 0, output, WithWnd(128, 128), WithInterval(10))
-		kcps[1] = New[int32](0x11223344, 1, output, WithWnd(128, 128), WithInterval(10))
+		kcps[0] = New(0x11223344, int32(0), output, WithWnd(128, 128), WithInterval(10))
+		kcps[1] = New(0x11223344, int32(1), output, WithWnd(128, 128), WithInterval(10))
 	case 1:
-		kcps[0] = New[int32](0x11223344, 0, output, WithWnd(128, 128), WithInterval(10), WithNoCwnd(true))
-		kcps[1] = New[int32](0x11223344, 1, output, WithWnd(128, 128), WithInterval(10), WithNoCwnd(true))
+		kcps[0] = New(0x11223344, int32(0), output, WithWnd(128, 128), WithInterval(10), WithNoCwnd(true))
+		kcps[1] = New(0x11223344, int32(1), output, WithWnd(128, 128), WithInterval(10), WithNoCwnd(true))
 	default:
-		kcps[0] = New[int32](0x11223344, 0, output, WithWnd(128, 128), WithNodelay(2), WithInterval(10), WithFastResend(2), WithNoCwnd(true))
-		kcps[1] = New[int32](0x11223344, 1, output, WithWnd(128, 128), WithNodelay(2), WithInterval(10), WithFastResend(1), WithNoCwnd(true), WithMinRTO(10))
+		kcps[0] = New(0x11223344, int32(0), output, WithWnd(128, 128), WithNodelay(2), WithInterval(10), WithFastResend(2), WithNoCwnd(true))
+		kcps[1] = New(0x11223344, int32(1), output, WithWnd(128, 128), WithNodelay(2), WithInterval(10), WithFastResend(1), WithNoCwnd(true), WithMinRTO(10))
 	}
 
 	var buffer [1500]byte
@@ -289,8 +289,8 @@ func testStreamKCP(t *testing.T, nocwnd bool) {
 
 	var (
 		kcps = [2]*KcpCB{
-			New[int32](0x11223344, 0, output, WithStream(true), WithWnd(128, 128), WithInterval(10), WithNoCwnd(nocwnd)),
-			New[int32](0x11223344, 1, output, WithStream(true), WithWnd(128, 128), WithInterval(10), WithNoCwnd(nocwnd)),
+			New(0x11223344, int32(0), output, WithStream(true), WithWnd(128, 128), WithInterval(10), WithNoCwnd(nocwnd)),
+			New(0x11223344, int32(1), output, WithStream(true), WithWnd(128, 128), WithInterval(10), WithNoCwnd(nocwnd)),
 		}
 		current    int32 = currentMilli()
 		slap       int32 = current + 20
