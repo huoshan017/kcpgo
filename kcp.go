@@ -102,14 +102,14 @@ type KcpCB struct {
 	acklist                   []int32
 	ackcount                  int32
 	ackblock                  int32
-	user                      interface{}
+	user                      any
 	buffer                    []byte
 	output_func               func(buf []byte, user any) int32
 	updated                   bool
 }
 
 // 创建kcp
-func New(conv uint32, user any, outputFunc func([]byte, any) int32, options ...Option) *KcpCB {
+func New[T any](conv uint32, user T, outputFunc func([]byte, any) int32, options ...Option) *KcpCB {
 	kcp := &KcpCB{}
 	for i := 0; i < len(options); i++ {
 		options[i](&kcp.options)
