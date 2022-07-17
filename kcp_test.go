@@ -285,7 +285,7 @@ func randBytes(n int, ran *rand.Rand) []byte {
 }
 
 func testStreamKCP(t *testing.T, nocwnd bool) {
-	vnet = newLatencySimulator(t, 0, 60, 125, 1000)
+	vnet = newLatencySimulator(t, 30, 60, 125, 1000)
 
 	var (
 		kcps = [2]*KcpCB{

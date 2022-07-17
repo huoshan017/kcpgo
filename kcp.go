@@ -416,21 +416,21 @@ func (k *KcpCB) shrinkBuf() {
 }
 
 func (k *KcpCB) parseAck(sn int32) {
-	if timeDiff(sn, int32(k.snd_una)) < 0 || timeDiff(sn, int32(k.snd_nxt)) >= 0 {
+	if timeDiff(sn, k.snd_una) < 0 || timeDiff(sn, k.snd_nxt) >= 0 {
 		return
 	}
 
 	var iter = k.snd_buf.Begin()
 	for iter != k.snd_buf.End() {
 		var seg = iter.Value().(*segment)
-		if int32(seg.sn) == sn {
+		if seg.sn == sn {
 			if !k.snd_buf.Delete(iter) {
 				panic("kcp: parse ack delete node failed")
 			}
 			putSeg(seg)
 			break
 		}
-		if timeDiff(sn, int32(seg.sn)) < 0 {
+		if timeDiff(sn, seg.sn) < 0 {
 			break
 		}
 		iter = iter.Next()
@@ -441,7 +441,7 @@ func (k *KcpCB) parseUna(una int32) {
 	var iter = k.snd_buf.Begin()
 	for iter != k.snd_buf.End() {
 		var seg = iter.Value().(*segment)
-		if timeDiff(una, int32(seg.sn)) <= 0 {
+		if timeDiff(una, seg.sn) <= 0 {
 			break
 		}
 		var o bool
