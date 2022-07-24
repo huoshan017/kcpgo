@@ -224,6 +224,7 @@ func (k *KcpCB) recv(buf []byte, isPeek bool) int32 {
 	if k.rcv_queue.IsEmpty() {
 		return -1
 	}
+
 	peekSize := k.peekSize()
 	if peekSize < 0 {
 		return -2
@@ -234,7 +235,7 @@ func (k *KcpCB) recv(buf []byte, isPeek bool) int32 {
 	}
 
 	var recover bool
-	if k.rcv_queue.GetLength() >= int32(k.options.rcv_wnd) {
+	if k.rcv_queue.GetLength() >= k.options.rcv_wnd {
 		recover = true
 	}
 
@@ -273,22 +274,9 @@ func (k *KcpCB) recv(buf []byte, isPeek bool) int32 {
 	}
 
 	// move available data from rcv_buf -> rcv_queue
-	iter = k.rcv_buf.Begin()
-	for iter != k.rcv_buf.End() {
-		seg := iter.Value().(*segment)
-		if seg.sn != k.rcv_nxt || k.rcv_queue.GetLength() >= int32(k.options.rcv_wnd) {
-			break
-		}
+	k.rcvBuf2Queue()
 
-		iter, o = k.rcv_buf.DeleteContinueNext(iter)
-		if !o {
-			panic("kcp: delete receive buf node failed")
-		}
-		k.rcv_queue.PushBack(iter.Value())
-		k.rcv_nxt += 1
-	}
-
-	if recover && k.rcv_queue.GetLength() < int32(k.options.rcv_wnd) {
+	if recover && k.rcv_queue.GetLength() < k.options.rcv_wnd {
 		k.probe |= KCP_ASK_TELL
 	}
 
@@ -305,7 +293,7 @@ func (k *KcpCB) peekSize() int32 {
 		return seg.dlen
 	}
 
-	if k.rcv_queue.GetLength() < int32(seg.frg)+1 {
+	if k.rcv_queue.GetLength() < seg.frg+1 {
 		return -1
 	}
 
@@ -332,7 +320,7 @@ func (k *KcpCB) Send(data []byte) int32 {
 		if !k.snd_queue.IsEmpty() {
 			iter := k.snd_queue.RBegin()
 			seg := iter.Value().(*segment)
-			copied = seg.copyData(data, int32(k.mss))
+			copied = seg.copyData(data, k.mss)
 			if copied < 0 {
 				return -2
 			}
@@ -347,10 +335,10 @@ func (k *KcpCB) Send(data []byte) int32 {
 
 	var count int32
 	left := int32(len(data)) - copied
-	if left < int32(k.mss) {
+	if left < k.mss {
 		count = 1
 	} else {
-		count = (left + int32(k.mss) - 1) / int32(k.mss)
+		count = (left + k.mss - 1) / k.mss
 	}
 
 	if count >= KCP_WND_RCV {
@@ -364,7 +352,7 @@ func (k *KcpCB) Send(data []byte) int32 {
 	// fragment
 	for i := int32(0); i < count; i++ {
 		var seg = getSeg()
-		var c = seg.copyData(data[copied:], int32(k.mss))
+		var c = seg.copyData(data[copied:], k.mss)
 		if c < 0 {
 			putSeg(seg)
 			return -2
@@ -531,20 +519,26 @@ func (k *KcpCB) parseData(seg *segment) {
 	}
 
 	// move available data from rcv_buf -> rcv_queue
-	iter = k.rcv_buf.Begin()
+	k.rcvBuf2Queue()
+}
+
+func (k *KcpCB) rcvBuf2Queue() {
+	var (
+		iter = k.rcv_buf.Begin()
+		o    bool
+	)
 	for iter != k.rcv_buf.End() {
-		seg = iter.Value().(*segment)
-		if seg.sn == k.rcv_nxt && k.rcv_queue.GetLength() < k.options.rcv_wnd {
-			var o bool
-			iter, o = k.rcv_buf.DeleteContinueNext(iter)
-			if !o {
-				panic("kcp: parse data failed during delete node from receive queue")
-			}
-			k.rcv_queue.PushBack(seg)
-			k.rcv_nxt += 1
-		} else {
+		seg := iter.Value().(*segment)
+		if seg.sn != k.rcv_nxt || k.rcv_queue.GetLength() >= k.options.rcv_wnd {
 			break
 		}
+
+		iter, o = k.rcv_buf.DeleteContinueNext(iter)
+		if !o {
+			panic("kcp: delete receive buf node failed")
+		}
+		k.rcv_queue.PushBack(seg)
+		k.rcv_nxt += 1
 	}
 }
 
@@ -636,7 +630,7 @@ func (k *KcpCB) Input(data []byte) int32 {
 					seg.sn = sn
 					seg.una = una
 					if dlen > 0 {
-						seg.copyData(data[offset:offset+dlen], int32(k.mss))
+						seg.copyData(data[offset:offset+dlen], k.mss)
 					}
 					k.parseData(seg)
 				}
@@ -1005,7 +999,7 @@ func (k *KcpCB) SetMtu(mtu int32) int32 {
 		return -1
 	}
 
-	if int32(k.options.mtu) == mtu {
+	if k.options.mtu == mtu {
 		return 0
 	}
 
