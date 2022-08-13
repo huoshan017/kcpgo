@@ -109,23 +109,31 @@ type KcpCB struct {
 }
 
 // 创建kcp
-func New(conv uint32, user any, outputFunc func([]byte, any) int32, options ...Option) *KcpCB {
+func New(conv uint32, user any, output func([]byte, any) int32, options ...Option) *KcpCB {
 	kcp := &KcpCB{}
 	for i := 0; i < len(options); i++ {
 		options[i](&kcp.options)
 	}
-	kcp.conv = conv
-	kcp.user = user
-	kcp.snd_queue = list.NewObj()
-	kcp.rcv_queue = list.NewObj()
-	kcp.snd_buf = list.NewObj()
-	kcp.rcv_buf = list.NewObj()
-	kcp.output_func = outputFunc
-	kcp.init()
+
+	kcp.init(conv, user, output)
 	return kcp
 }
 
-func (k *KcpCB) init() {
+func NewWithOptions(conv uint32, user any, output func([]byte, any) int32, options *Options) *KcpCB {
+	kcp := &KcpCB{}
+	kcp.options = *options
+	kcp.init(conv, user, output)
+	return kcp
+}
+
+func (k *KcpCB) init(conv uint32, user any, output func([]byte, any) int32) {
+	k.conv = conv
+	k.user = user
+	k.snd_queue = list.NewObj()
+	k.rcv_queue = list.NewObj()
+	k.snd_buf = list.NewObj()
+	k.rcv_buf = list.NewObj()
+	k.output_func = output
 	if k.options.GetSendWnd() == 0 {
 		k.options.snd_wnd = KCP_WND_SND
 	}
@@ -676,27 +684,6 @@ func (k *KcpCB) Input(data []byte) int32 {
 	return 0
 }
 
-func (k *KcpCB) encodeSeg(data []byte, seg *segment) int32 {
-	var offset int32
-	encode32(data, int32(seg.conv))
-	offset += 4
-	data[offset] = byte(seg.cmd)
-	offset += 1
-	data[offset] = byte(seg.frg)
-	offset += 1
-	encode16(data[offset:], int16(seg.wnd))
-	offset += 2
-	encode32(data[offset:], seg.ts)
-	offset += 4
-	encode32(data[offset:], seg.sn)
-	offset += 4
-	encode32(data[offset:], seg.una)
-	offset += 4
-	encode32(data[offset:], seg.dlen)
-	offset += 4
-	return offset
-}
-
 func (k *KcpCB) wndUnused() int32 {
 	if k.rcv_queue.GetLength() < k.options.rcv_wnd {
 		return k.options.rcv_wnd - k.rcv_queue.GetLength()
@@ -724,18 +711,18 @@ func (k *KcpCB) Flush() {
 
 	// flush acknowledges
 	var (
-		count  = k.ackcount
-		offset int32
+		count   = k.ackcount
+		datalen int32
 	)
 	for i := int32(0); i < count; i++ {
-		if offset+KCP_OVERHEAD > k.options.mtu {
-			k.output(k.buffer, offset)
-			offset = 0
+		if datalen+KCP_OVERHEAD > k.options.mtu {
+			k.output(k.buffer, datalen)
+			datalen = 0
 		}
 		seg.cmd = KCP_CMD_ACK
 		seg.sn, seg.ts = k.ackGet(i)
-		var d = k.encodeSeg(k.buffer[offset:], &seg)
-		offset += d
+		var d = encodeSeg(k.buffer[datalen:], &seg)
+		datalen += d
 	}
 
 	k.ackcount = 0
@@ -766,23 +753,23 @@ func (k *KcpCB) Flush() {
 	// flush window probing commands
 	if k.probe&KCP_ASK_SEND > 0 {
 		seg.cmd = KCP_CMD_WASK
-		if offset+KCP_OVERHEAD > k.options.mtu {
-			k.output(k.buffer, offset)
-			offset = 0
+		if datalen+KCP_OVERHEAD > k.options.mtu {
+			k.output(k.buffer, datalen)
+			datalen = 0
 		}
-		var d = k.encodeSeg(k.buffer[offset:], &seg)
-		offset += d
+		var d = encodeSeg(k.buffer[datalen:], &seg)
+		datalen += d
 	}
 
 	// flush window probing commands
 	if k.probe&KCP_ASK_TELL > 0 {
 		seg.cmd = KCP_CMD_WINS
-		if offset+KCP_OVERHEAD > k.options.mtu {
-			k.output(k.buffer, offset)
-			offset = 0
+		if datalen+KCP_OVERHEAD > k.options.mtu {
+			k.output(k.buffer, datalen)
+			datalen = 0
 		}
-		var d = k.encodeSeg(k.buffer[offset:], &seg)
-		offset += d
+		var d = encodeSeg(k.buffer[datalen:], &seg)
+		datalen += d
 	}
 
 	k.probe = 0
@@ -875,16 +862,16 @@ func (k *KcpCB) Flush() {
 			tseg.wnd = seg.wnd
 			tseg.una = k.rcv_nxt
 			var need = KCP_OVERHEAD + tseg.dlen
-			if offset+need > k.options.mtu {
-				k.output(k.buffer, offset)
-				offset = 0
+			if datalen+need > k.options.mtu {
+				k.output(k.buffer, datalen)
+				datalen = 0
 			}
-			var d = k.encodeSeg(k.buffer[offset:], tseg)
-			offset += d
+			var d = encodeSeg(k.buffer[datalen:], tseg)
+			datalen += d
 
 			if tseg.dlen > 0 {
-				copy(k.buffer[offset:], tseg.data[:tseg.dlen])
-				offset += tseg.dlen
+				copy(k.buffer[datalen:], tseg.data[:tseg.dlen])
+				datalen += tseg.dlen
 			}
 
 			if tseg.xmit >= k.options.dead_link {
@@ -894,8 +881,8 @@ func (k *KcpCB) Flush() {
 	}
 
 	// flush remain segments
-	if offset > 0 {
-		k.output(k.buffer, offset)
+	if datalen > 0 {
+		k.output(k.buffer, datalen)
 	}
 
 	// update ssthresh
@@ -1109,6 +1096,27 @@ func decode32(data []byte) int32 {
 	} else {
 		return int32(data[0])<<24&0x7f000000 + int32(data[1])<<16&0x00ff0000 + int32(data[2])<<8&0xff00 + int32(data[3])
 	}
+}
+
+func encodeSeg(data []byte, seg *segment) int32 {
+	var offset int32
+	encode32(data, int32(seg.conv))
+	offset += 4
+	data[offset] = byte(seg.cmd)
+	offset += 1
+	data[offset] = byte(seg.frg)
+	offset += 1
+	encode16(data[offset:], int16(seg.wnd))
+	offset += 2
+	encode32(data[offset:], seg.ts)
+	offset += 4
+	encode32(data[offset:], seg.sn)
+	offset += 4
+	encode32(data[offset:], seg.una)
+	offset += 4
+	encode32(data[offset:], seg.dlen)
+	offset += 4
+	return offset
 }
 
 var (
