@@ -148,7 +148,9 @@ func (k *KcpCB) init(conv uint32, user any, output func([]byte, any) int32) {
 		k.SetMtu(k.options.mtu)
 	}
 	k.mss = k.options.mtu - KCP_OVERHEAD
-	k.buffer = make([]byte, 3*(k.options.mtu+KCP_OVERHEAD))
+	if !k.options.userfree_outputbuf {
+		k.buffer = make([]byte, 3*(k.options.mtu+KCP_OVERHEAD))
+	}
 	if k.options.rx_rto == 0 {
 		k.options.rx_rto = KCP_RTO_DEF
 	}
@@ -691,8 +693,20 @@ func (k *KcpCB) wndUnused() int32 {
 	return 0
 }
 
-func (k *KcpCB) output(data []byte, dlen int32) {
-	k.output_func(data[:dlen], k.user)
+func (k *KcpCB) output(dlen int32) {
+	k.output_func(k.buffer[:dlen], k.user)
+	if k.options.userfree_outputbuf {
+		k.buffer = nil
+	}
+}
+
+func (k *KcpCB) encodeSeg(datalen int32, seg *segment) int32 {
+	if k.options.userfree_outputbuf {
+		if k.buffer == nil {
+			k.buffer = allocOutputBuffer(k.options.mtu)
+		}
+	}
+	return encodeSeg(k.buffer[datalen:], seg)
 }
 
 func (k *KcpCB) Flush() {
@@ -714,14 +728,15 @@ func (k *KcpCB) Flush() {
 		count   = k.ackcount
 		datalen int32
 	)
+
 	for i := int32(0); i < count; i++ {
 		if datalen+KCP_OVERHEAD > k.options.mtu {
-			k.output(k.buffer, datalen)
+			k.output(datalen)
 			datalen = 0
 		}
 		seg.cmd = KCP_CMD_ACK
 		seg.sn, seg.ts = k.ackGet(i)
-		var d = encodeSeg(k.buffer[datalen:], &seg)
+		var d = k.encodeSeg(datalen, &seg)
 		datalen += d
 	}
 
@@ -754,10 +769,10 @@ func (k *KcpCB) Flush() {
 	if k.probe&KCP_ASK_SEND > 0 {
 		seg.cmd = KCP_CMD_WASK
 		if datalen+KCP_OVERHEAD > k.options.mtu {
-			k.output(k.buffer, datalen)
+			k.output(datalen)
 			datalen = 0
 		}
-		var d = encodeSeg(k.buffer[datalen:], &seg)
+		var d = k.encodeSeg(datalen, &seg)
 		datalen += d
 	}
 
@@ -765,10 +780,10 @@ func (k *KcpCB) Flush() {
 	if k.probe&KCP_ASK_TELL > 0 {
 		seg.cmd = KCP_CMD_WINS
 		if datalen+KCP_OVERHEAD > k.options.mtu {
-			k.output(k.buffer, datalen)
+			k.output(datalen)
 			datalen = 0
 		}
-		var d = encodeSeg(k.buffer[datalen:], &seg)
+		var d = k.encodeSeg(datalen, &seg)
 		datalen += d
 	}
 
@@ -863,10 +878,10 @@ func (k *KcpCB) Flush() {
 			tseg.una = k.rcv_nxt
 			var need = KCP_OVERHEAD + tseg.dlen
 			if datalen+need > k.options.mtu {
-				k.output(k.buffer, datalen)
+				k.output(datalen)
 				datalen = 0
 			}
-			var d = encodeSeg(k.buffer[datalen:], tseg)
+			var d = k.encodeSeg(datalen, tseg)
 			datalen += d
 
 			if tseg.dlen > 0 {
@@ -882,7 +897,7 @@ func (k *KcpCB) Flush() {
 
 	// flush remain segments
 	if datalen > 0 {
-		k.output(k.buffer, datalen)
+		k.output(datalen)
 	}
 
 	// update ssthresh

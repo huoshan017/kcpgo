@@ -1,16 +1,17 @@
 package kcp
 
 type Options struct {
-	mtu               int32
-	rx_rto, rx_minrto int32
-	snd_wnd, rcv_wnd  int32
-	nodelay           int32
-	fastresend        int32
-	nocwnd, stream    bool
-	interval          int32
-	ssthresh          int32
-	fastlimit         int32
-	dead_link         int32
+	mtu                int32
+	rx_rto, rx_minrto  int32
+	snd_wnd, rcv_wnd   int32
+	nodelay            int32
+	fastresend         int32
+	nocwnd, stream     bool
+	interval           int32
+	ssthresh           int32
+	fastlimit          int32
+	dead_link          int32
+	userfree_outputbuf bool
 }
 
 func (options Options) GetMtu() int32 {
@@ -63,6 +64,10 @@ func (options Options) GetFastAckLimit() int32 {
 
 func (options Options) GetDeadLink() int32 {
 	return options.dead_link
+}
+
+func (options Options) IsUserFreeOuputBuf() bool {
+	return options.userfree_outputbuf
 }
 
 type Option func(*Options)
@@ -137,5 +142,11 @@ func WithFastAckLimit(fastlimit int32) Option {
 func WithDeadLink(deadlink int32) Option {
 	return func(options *Options) {
 		options.dead_link = deadlink
+	}
+}
+
+func WithUserFreeOutputBuf(userfree bool) Option {
+	return func(options *Options) {
+		options.userfree_outputbuf = userfree
 	}
 }

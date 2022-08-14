@@ -153,6 +153,13 @@ func output(data []byte, user any) int32 {
 	return 0
 }
 
+func outputWithUserFree(data []byte, user any) int32 {
+	var peer = user.(int32)
+	vnet.send(peer, data)
+	RecycleOutputBuffer(data)
+	return 0
+}
+
 func test(mode int32, t *testing.T) {
 	vnet = newLatencySimulator(t, 10, 60, 125, 1000)
 
@@ -284,13 +291,19 @@ func randBytes(n int, ran *rand.Rand) []byte {
 	return b
 }
 
-func testStreamKCP(t *testing.T, nocwnd bool) {
+func testStreamKCP(t *testing.T, nocwnd bool, userfree bool) {
 	vnet = newLatencySimulator(t, 30, 60, 125, 1000)
 
+	var outputFunc func([]byte, any) int32
+	if userfree {
+		outputFunc = outputWithUserFree
+	} else {
+		outputFunc = output
+	}
 	var (
 		kcps = [2]*KcpCB{
-			New(0x11223344, int32(0), output, WithStream(true), WithWnd(128, 128), WithInterval(10), WithNoCwnd(nocwnd)),
-			New(0x11223344, int32(1), output, WithStream(true), WithWnd(128, 128), WithInterval(10), WithNoCwnd(nocwnd)),
+			New(0x11223344, int32(0), outputFunc, WithStream(true), WithWnd(128, 128), WithInterval(10), WithNoCwnd(nocwnd), WithUserFreeOutputBuf(userfree)),
+			New(0x11223344, int32(1), outputFunc, WithStream(true), WithWnd(128, 128), WithInterval(10), WithNoCwnd(nocwnd), WithUserFreeOutputBuf(userfree)),
 		}
 		current    int32 = currentMilli()
 		slap       int32 = current + 20
@@ -391,9 +404,17 @@ func testStreamKCP(t *testing.T, nocwnd bool) {
 }
 
 func TestStreamWithCwnd(t *testing.T) {
-	testStreamKCP(t, false)
+	testStreamKCP(t, false, false)
 }
 
 func TestStreamNoCwnd(t *testing.T) {
-	testStreamKCP(t, true)
+	testStreamKCP(t, true, false)
+}
+
+func TestStreamWithCwndAndUserFree(t *testing.T) {
+	testStreamKCP(t, false, true)
+}
+
+func TestStreamNoCwndAndUserFree(t *testing.T) {
+	testStreamKCP(t, true, true)
 }

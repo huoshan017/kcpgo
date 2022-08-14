@@ -1,6 +1,10 @@
 package kcp
 
-import "sync"
+import (
+	"reflect"
+	"sync"
+	"unsafe"
+)
 
 var (
 	stepSize  = []int32{64, 128, 256, 384, 512, 768, 1024, 1280, 1536}
@@ -13,7 +17,8 @@ func init() {
 		s := stepSize[i]
 		stepPools[i] = &sync.Pool{
 			New: func() any {
-				return make([]byte, s)
+				buf := make([]byte, s)
+				return buf
 			},
 		}
 	}
@@ -40,4 +45,17 @@ func putBuffer(b []byte) {
 			stepPools[i].Put(b)
 		}
 	}
+}
+
+func allocOutputBuffer(s int32) []byte {
+	b := getBuffer(s)
+	return b[:s]
+}
+
+func RecycleOutputBuffer(b []byte) {
+	sh := (*reflect.SliceHeader)(unsafe.Pointer(&b))
+	if sh.Len < sh.Cap {
+		sh.Len = sh.Cap
+	}
+	putBuffer(b)
 }
