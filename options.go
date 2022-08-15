@@ -66,7 +66,7 @@ func (options Options) GetDeadLink() int32 {
 	return options.dead_link
 }
 
-func (options Options) IsUserFreeOuputBuf() bool {
+func (options Options) IsUserFreeOutputBuf() bool {
 	return options.userfree_outputbuf
 }
 
