@@ -70,6 +70,62 @@ func (options Options) IsUserFreeOuputBuf() bool {
 	return options.userfree_outputbuf
 }
 
+func (options *Options) SetMtu(mtu int32) {
+	options.mtu = mtu
+}
+
+func (options *Options) SetMinRTO(minrto int32) {
+	options.rx_minrto = minrto
+}
+
+func (options *Options) SetRTO(rto int32) {
+	options.rx_rto = rto
+}
+
+func (options *Options) SetSendWnd(wnd int32) {
+	options.snd_wnd = wnd
+}
+
+func (options *Options) SetRecvWnd(wnd int32) {
+	options.rcv_wnd = wnd
+}
+
+func (options *Options) SetNodelay(nodelay int32) {
+	options.nodelay = nodelay
+}
+
+func (options *Options) SetFastResend(resend int32) {
+	options.fastresend = resend
+}
+
+func (options *Options) SetNoCwnd(nocwnd bool) {
+	options.nocwnd = nocwnd
+}
+
+func (options *Options) SetStream(stream bool) {
+	options.stream = stream
+}
+
+func (options *Options) SetInterval(interval int32) {
+	options.interval = interval
+}
+
+func (options *Options) SetSSThresh(ssthresh int32) {
+	options.ssthresh = ssthresh
+}
+
+func (options *Options) SetFastAckLimit(limit int32) {
+	options.fastlimit = limit
+}
+
+func (options *Options) SetDeadLink(deadlink int32) {
+	options.dead_link = deadlink
+}
+
+func (options *Options) SetUserFreeOutputBuf(userfree bool) {
+	options.userfree_outputbuf = userfree
+}
+
 type Option func(*Options)
 
 func WithStream(stream bool) Option {
