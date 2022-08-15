@@ -29,6 +29,7 @@ const (
 	KCP_WND_SND             = 32
 	KCP_WND_RCV             = 128
 	KCP_MTU_DEF             = 1400
+	KCP_MTU_MAX             = 1500
 	KCP_ACK_FAST            = 3
 	KCP_INTERVAL            = 100
 	KCP_OVERHEAD            = 24

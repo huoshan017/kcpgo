@@ -80,6 +80,9 @@ func WithStream(stream bool) Option {
 
 func WithMtu(mtu int32) Option {
 	return func(options *Options) {
+		if mtu > KCP_MTU_MAX {
+			mtu = KCP_MTU_MAX
+		}
 		options.mtu = mtu
 	}
 }
