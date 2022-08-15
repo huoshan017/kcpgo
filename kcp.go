@@ -235,7 +235,7 @@ func (k *KcpCB) recv(buf []byte, isPeek bool) int32 {
 		return -1
 	}
 
-	peekSize := k.peekSize()
+	peekSize := k.PeekSize()
 	if peekSize < 0 {
 		return -2
 	}
@@ -293,7 +293,7 @@ func (k *KcpCB) recv(buf []byte, isPeek bool) int32 {
 	return length
 }
 
-func (k *KcpCB) peekSize() int32 {
+func (k *KcpCB) PeekSize() int32 {
 	if k.rcv_queue.IsEmpty() {
 		return -1
 	}
