@@ -3,6 +3,7 @@ package kcp
 import (
 	"bytes"
 	"fmt"
+	"log"
 	"math/rand"
 	"testing"
 	"time"
@@ -154,6 +155,7 @@ func output(data []byte, user any) int32 {
 }
 
 func outputWithUserFree(data []byte, user any) int32 {
+	log.Printf("data: %v  user: %v", data, user)
 	var peer = user.(int32)
 	vnet.send(peer, data)
 	RecycleOutputBuffer(data)
@@ -417,4 +419,72 @@ func TestStreamWithCwndAndUserFree(t *testing.T) {
 
 func TestStreamNoCwndAndUserFree(t *testing.T) {
 	testStreamKCP(t, true, true)
+}
+
+func TestSendRecv(t *testing.T) {
+	vnet = newLatencySimulator(t, 30, 60, 125, 1000)
+
+	var (
+		kcps = [2]*KcpCB{
+			New(0x11223344, int32(0), outputWithUserFree, WithStream(true), WithWnd(128, 128), WithInterval(10), WithNoCwnd(true), WithUserFreeOutputBuf(true)),
+			New(0x11223344, int32(1), outputWithUserFree, WithStream(true), WithWnd(128, 128), WithInterval(10), WithNoCwnd(true), WithUserFreeOutputBuf(true)),
+		}
+		current int32 = currentMilli()
+		//slap    int32 = current + 20
+	)
+
+	var buffer [5000]byte
+	var start = currentMilli()
+	var send bool
+	for i := 0; i < 1000; i++ {
+		time.Sleep(time.Millisecond)
+		current = currentMilli()
+		for i := 0; i < 2; i++ {
+			kcps[i].Update(current)
+		}
+
+		if !send {
+			//for ; current >= slap; slap += 20 {
+			kcps[0].Send([]byte("hello"))
+			//}
+			send = true
+		}
+
+		for {
+			var d = vnet.recv(1, buffer[:])
+			if d < 0 {
+				break
+			}
+			kcps[1].Input(buffer[:d])
+		}
+
+		for {
+			var d = vnet.recv(0, buffer[:])
+			if d < 0 {
+				break
+			}
+			kcps[0].Input(buffer[:d])
+		}
+
+		for {
+			var d = kcps[1].Recv(buffer[:])
+			if d < 0 {
+				break
+			}
+			//kcps[1].Send(buffer[:d])
+		}
+
+		/*for {
+			var d = kcps[0].Recv(buffer[:])
+			if d < 0 {
+				break
+			}
+		}*/
+	}
+	var cost = currentMilli() - start
+	vnet.clear()
+	for i := 0; i < 2; i++ {
+		kcps[i].Release()
+	}
+	t.Logf("stream mode result (%dms):", cost)
 }

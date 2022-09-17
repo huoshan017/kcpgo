@@ -1047,6 +1047,10 @@ func (k *KcpCB) SetWndSize(sndWnd, rcvWnd int32) {
 	}
 }
 
+func (k *KcpCB) GetConv() uint32 {
+	return k.conv
+}
+
 func (k *KcpCB) GetWaitSnd() int32 {
 	return k.snd_buf.GetLength() + k.snd_queue.GetLength()
 }
