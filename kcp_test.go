@@ -5,8 +5,10 @@ import (
 	"fmt"
 	"log"
 	"math/rand"
+	"reflect"
 	"testing"
 	"time"
+	"unsafe"
 
 	"github.com/huoshan017/ponu/list"
 )
@@ -421,6 +423,23 @@ func TestStreamNoCwndAndUserFree(t *testing.T) {
 	testStreamKCP(t, true, true)
 }
 
+func TestStreamWithUserMtuBuffer(t *testing.T) {
+	UserMtuBufferFunc(func(s int32) []byte {
+		b := _getBuffer(s+20+4, true)
+		// 截取中間一段，去掉前後綴8個字節
+		return b[20 : s+20]
+	}, func(b []byte) {
+		sh := (*reflect.SliceHeader)(unsafe.Pointer(&b))
+		sh.Data -= 20
+		sh.Cap += 20
+		if sh.Len < sh.Cap {
+			sh.Len = sh.Cap
+		}
+		_putBuffer(b, true)
+	})
+	testStreamKCP(t, false, false)
+}
+
 func TestSendRecv(t *testing.T) {
 	vnet = newLatencySimulator(t, 30, 60, 125, 1000)
 
@@ -444,9 +463,7 @@ func TestSendRecv(t *testing.T) {
 		}
 
 		if !send {
-			//for ; current >= slap; slap += 20 {
 			kcps[0].Send([]byte("hello"))
-			//}
 			send = true
 		}
 
@@ -471,15 +488,7 @@ func TestSendRecv(t *testing.T) {
 			if d < 0 {
 				break
 			}
-			//kcps[1].Send(buffer[:d])
 		}
-
-		/*for {
-			var d = kcps[0].Recv(buffer[:])
-			if d < 0 {
-				break
-			}
-		}*/
 	}
 	var cost = currentMilli() - start
 	vnet.clear()
