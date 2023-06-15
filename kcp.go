@@ -129,10 +129,10 @@ func NewWithOptions(conv uint32, user any, output func([]byte, any) int32, optio
 func (k *KcpCB) init(conv uint32, user any, output func([]byte, any) int32) {
 	k.conv = conv
 	k.user = user
-	k.snd_queue = list.NewObj()
-	k.rcv_queue = list.NewObj()
-	k.snd_buf = list.NewObj()
-	k.rcv_buf = list.NewObj()
+	k.snd_queue = list.List{}
+	k.rcv_queue = list.List{}
+	k.snd_buf = list.List{}
+	k.rcv_buf = list.List{}
 	k.output_func = output
 	if k.options.GetSendWnd() == 0 {
 		k.options.snd_wnd = KCP_WND_SND
