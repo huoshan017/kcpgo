@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"log"
 	"math/rand"
-	"reflect"
 	"testing"
 	"time"
 	"unsafe"
@@ -429,12 +428,14 @@ func TestStreamWithUserMtuBuffer(t *testing.T) {
 		// 截取中間一段，去掉前後綴8個字節
 		return b[20 : s+20]
 	}, func(b []byte) {
-		sh := (*reflect.SliceHeader)(unsafe.Pointer(&b))
-		sh.Data -= 20
-		sh.Cap += 20
-		if sh.Len < sh.Cap {
-			sh.Len = sh.Cap
-		}
+		//sh := (*reflect.SliceHeader)(unsafe.Pointer(&b))
+		//sh.Data -= 20
+		//sh.Cap += 20
+		//if sh.Len < sh.Cap {
+		//	sh.Len = sh.Cap
+		//}
+		sd := unsafe.SliceData(b)
+		b = unsafe.Slice((*byte)(unsafe.Pointer(uintptr(unsafe.Pointer(sd))-20)), cap(b)+20)
 		_putBuffer(b, true)
 	})
 	testStreamKCP(t, false, false)

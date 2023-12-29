@@ -2,7 +2,6 @@ package kcp
 
 import (
 	"fmt"
-	"reflect"
 	"sync"
 	"unsafe"
 )
@@ -37,7 +36,7 @@ func _getBuffer(s int32, store bool) []byte {
 		if stepSize[i] >= s {
 			b := stepPools[i].Get().([]byte)
 			if store {
-				pb := (*reflect.SliceHeader)(unsafe.Pointer(&b)).Data
+				pb := unsafe.SliceData(b)
 				stored.Store(pb, true)
 			}
 			return b
@@ -64,9 +63,9 @@ func _putBuffer(b []byte, store bool) {
 		}
 	}
 	if !found {
-		panic(fmt.Sprintf("kcpgo: not found buffer %v", b))
+		panic(fmt.Sprintf("kcpgo: not found buffer %v, buffer cap %v", b, c))
 	} else if store {
-		pb := (*reflect.SliceHeader)(unsafe.Pointer(&b)).Data
+		pb := unsafe.SliceData(b)
 		if _, o := stored.LoadAndDelete(pb); !o {
 			panic(fmt.Sprintf("kcpgo: not store buffer %v, cant put buffer", b))
 		}
@@ -97,10 +96,11 @@ func UserMtuBufferFunc(get func(int32) []byte, put func([]byte)) {
 }
 
 func RecycleOutputBuffer(b []byte) {
-	sh := (*reflect.SliceHeader)(unsafe.Pointer(&b))
-	if sh.Len < sh.Cap {
-		sh.Len = sh.Cap
-	}
+	//sh := (*reflect.SliceHeader)(unsafe.Pointer(&b))
+	//if sh.Len < sh.Cap {
+	//	sh.Len = sh.Cap
+	//}
+	b = unsafe.Slice(unsafe.SliceData(b), cap(b))
 	if userPutBufferFunc != nil {
 		userPutBufferFunc(b)
 	} else {

@@ -2,7 +2,6 @@ package kcp
 
 import (
 	"math/rand"
-	"reflect"
 	"testing"
 	"time"
 	"unsafe"
@@ -55,11 +54,13 @@ func TestMtuBufferFunc(t *testing.T) {
 		// 截取中間一段，去掉前後綴8個字節
 		return b[4 : s-4]
 	}, func(b []byte) {
-		sh := (*reflect.SliceHeader)(unsafe.Pointer(&b))
-		if sh.Len < sh.Cap {
-			sh.Len = sh.Cap
-		}
-		sh.Data -= 4
+		//sh := (*reflect.SliceHeader)(unsafe.Pointer(&b))
+		//if sh.Len < sh.Cap {
+		//	sh.Len = sh.Cap
+		//}
+		//sh.Data -= 4
+		sd := unsafe.SliceData(b)
+		b = unsafe.Slice((*byte)(unsafe.Pointer(uintptr(unsafe.Pointer(sd))-4)), cap(b)+4)
 		_putBuffer(b, true)
 	})
 	testBuffer(1, 1500-4-4)

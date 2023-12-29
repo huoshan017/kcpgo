@@ -1,14 +1,2 @@
-github.com/huoshan017/ponu v0.0.0-20220616161235-73c89d317ecb h1:s6ctzLVix8dG7FB9YF1No/xY8Da/+HdMtZw1mnTST5Y=
-github.com/huoshan017/ponu v0.0.0-20220616161235-73c89d317ecb/go.mod h1:EbmZkFD0LGEIgTiETwJlkL1qO1oRoR0DTzXWPLLMhco=
-github.com/huoshan017/ponu v0.0.0-20220618123226-b9dbf89197cc h1:jYqvQqjtJ3yJ+z5dPcgSQnP+fjhAHgrQNBkrhPXFcxM=
-github.com/huoshan017/ponu v0.0.0-20220618123226-b9dbf89197cc/go.mod h1:EbmZkFD0LGEIgTiETwJlkL1qO1oRoR0DTzXWPLLMhco=
-github.com/huoshan017/ponu v0.0.0-20220620090330-40e3ac436c7f h1:sW1CoBtbQ94tLe35c33HOvqkdfwPLPC8XuqrkszF7Cc=
-github.com/huoshan017/ponu v0.0.0-20220620090330-40e3ac436c7f/go.mod h1:EbmZkFD0LGEIgTiETwJlkL1qO1oRoR0DTzXWPLLMhco=
-github.com/huoshan017/ponu v0.0.0-20220622141817-1b71f528c8de h1:vPngak2zG10toZBhpkKO1quYEasiED6ur1moE62L0Ps=
-github.com/huoshan017/ponu v0.0.0-20220622141817-1b71f528c8de/go.mod h1:EbmZkFD0LGEIgTiETwJlkL1qO1oRoR0DTzXWPLLMhco=
-github.com/huoshan017/ponu v0.0.0-20220625105549-0934e1dcaecd h1:0XH21P42RdrLmT+burkOAp/DN72e6tHRfqJ5OnqCHV0=
-github.com/huoshan017/ponu v0.0.0-20220625105549-0934e1dcaecd/go.mod h1:EbmZkFD0LGEIgTiETwJlkL1qO1oRoR0DTzXWPLLMhco=
-github.com/huoshan017/ponu v0.0.0-20220920105348-ef0d02f5e304 h1:S2UVykvyBcmn7pkNphRO/Mrh0keEfaDkFH/vZV2zbDY=
-github.com/huoshan017/ponu v0.0.0-20220920105348-ef0d02f5e304/go.mod h1:tpk3wr8WXv+1wpOu00KOTRbctdvkQnhQmpB5ks/EX4I=
 github.com/huoshan017/ponu v0.0.0-20230515104746-47e588bbbf02 h1:PwMzJkXW3BK+fQYuvOmSjZH7FS/1uPyygXaLbhnKNdg=
 github.com/huoshan017/ponu v0.0.0-20230515104746-47e588bbbf02/go.mod h1:dbwSRHOrAANody1Gjv6Gs27IrrjT82E8DU3DQEdFDyo=
